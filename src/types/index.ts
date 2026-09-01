@@ -65,6 +65,12 @@ export interface HabitItemData {
 
 export type HabitKategoriLevel = 'belum_terbiasa' | 'mulai_terbiasa' | 'sudah_terbiasa';
 
+export interface HabitVerificationItem {
+  status: 'valid' | 'invalid';
+  reason?: string;
+  updatedAt?: number;
+}
+
 export interface ParentValidation {
   validated: boolean;
   status: 'valid' | 'invalid' | 'pending'; // Benar / Tidak Benar / Menunggu
@@ -75,6 +81,7 @@ export interface ParentValidation {
   rating?: number; // 1-5
   signatureStatus?: boolean;
   disputedHabits?: HabitId[]; // Kebiasaan yang ditandai tidak sesuai/belum dilakukan di rumah
+  habitVerifications?: Record<string, HabitVerificationItem>;
 }
 
 export interface SchoolSettings {
