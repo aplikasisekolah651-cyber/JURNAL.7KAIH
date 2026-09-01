@@ -27,6 +27,7 @@ interface AuthContextType {
   updateUser: (userId: string, updates: Partial<User>) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
   deleteUsersBulk: (userIds: string[]) => Promise<void>;
+  syncAllUsersToCloud: (usersToSync?: User[]) => Promise<{ count: number; success: boolean }>;
   importStudentsBulk: (importedList: { 
     name: string; 
     nis?: string; 
@@ -53,22 +54,38 @@ export const normalizeClassName = (cn?: string): string => {
   return clean || '7A';
 };
 
+export const normalizeClassCode = (cn?: string): string => {
+  if (!cn) return '';
+  const str = String(cn).toLowerCase();
+  const match = str.match(/([7-9])\s*([a-z])/);
+  if (match) {
+    return `${match[1]}${match[2]}`;
+  }
+  return str.replace(/[^a-z0-9]/g, '');
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [allUsers, setAllUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem(USERS_STORAGE_KEY);
     if (saved) {
       try {
         const parsed: User[] = JSON.parse(saved);
-        return parsed.map(u => ({
-          ...u,
-          className: u.className ? normalizeClassName(u.className) : u.className,
-          avatar: getUserAvatarUrl(u)
-        }));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(u => ({
+            ...u,
+            className: u.className ? normalizeClassName(u.className) : u.className,
+            avatar: getUserAvatarUrl(u)
+          }));
+        }
       } catch (e) {
         console.error('Failed to parse cached users:', e);
       }
     }
-    return DEMO_USERS;
+    return DEMO_USERS.map(u => ({
+      ...u,
+      className: u.className ? normalizeClassName(u.className) : u.className,
+      avatar: getUserAvatarUrl(u)
+    }));
   });
 
   const [currentUser, setCurrentUserState] = useState<User>(() => {
@@ -128,6 +145,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return Array.from(map.values());
   };
 
+  // Seed default demo users to Firestore if collection is empty
+  const seedDemoUsersToFirestore = async () => {
+    if (!db) return;
+    try {
+      const batch = writeBatch(db);
+      DEMO_USERS.forEach(u => {
+        batch.set(doc(db, 'users', u.id), cleanForFirestore(u));
+      });
+      await batch.commit();
+      console.log('Seeded initial DEMO_USERS to Cloud Firestore');
+    } catch (err) {
+      console.warn('Error seeding demo users to Firestore:', err);
+    }
+  };
+
   // Real-time Firestore sync listener & initial fetch
   useEffect(() => {
     if (!db) return;
@@ -137,7 +169,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 1. Immediate direct fetch from Firestore
     getDocs(usersColRef).then((snapshot) => {
-      if (isMounted && !snapshot.empty) {
+      if (!isMounted) return;
+      if (!snapshot.empty) {
         const firestoreUsers: User[] = [];
         snapshot.forEach((docSnap) => {
           firestoreUsers.push({ id: docSnap.id, ...(docSnap.data() as any) });
@@ -145,6 +178,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (firestoreUsers.length > 0) {
           setAllUsers(prev => mergeFirestoreUsers(prev, firestoreUsers));
         }
+      } else {
+        // Firestore is empty: auto-seed demo accounts so they work across all devices
+        seedDemoUsersToFirestore();
       }
     }).catch((err) => {
       console.warn('Firestore users direct fetch notice:', err);
@@ -174,8 +210,103 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const findUserByIdentifier = (userList: User[], cleaned: string): User | undefined => {
+  // Force Push / Sync All In-Memory Users to Cloud Firestore
+  const syncAllUsersToCloud = async (usersToSync?: User[]): Promise<{ count: number; success: boolean }> => {
+    const list = usersToSync || allUsers;
+    if (!db || list.length === 0) return { count: 0, success: false };
+
+    try {
+      const chunkSize = 100;
+      for (let i = 0; i < list.length; i += chunkSize) {
+        const chunk = list.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach(u => {
+          batch.set(doc(db, 'users', u.id), cleanForFirestore(u));
+        });
+        await batch.commit();
+      }
+      console.log(`Successfully synced all ${list.length} users to Cloud Firestore`);
+      return { count: list.length, success: true };
+    } catch (e) {
+      console.error('Error syncing all users to Firestore:', e);
+      return { count: 0, success: false };
+    }
+  };
+
+  const findUserByIdentifier = (userList: User[], cleaned: string, rawPassword?: string): User | undefined => {
     const rawClean = cleaned.replace(/\s+/g, '');
+    const cleanNoSpecial = cleaned.replace(/[^a-z0-9]/g, '');
+    const cleanPwd = (rawPassword || '').trim().toLowerCase();
+
+    // 1. Check if user typed role-specific prefix or intent
+    const isParentIntent = cleaned.startsWith('ortu') || cleanPwd.startsWith('ortu');
+    const isTeacherIntent = cleaned.startsWith('wali') || cleaned.startsWith('guru');
+    const isAdminIntent = cleaned.startsWith('admin');
+
+    // Priority 1: Direct matches based on explicit role intent
+    if (isTeacherIntent) {
+      const teacherTargetCode = normalizeClassCode(cleaned.replace(/^(wali|guru)[._-]*/, ''));
+      const foundTeacher = userList.find(u => {
+        if (u.role !== 'walikelas') return false;
+        const uClassCode = normalizeClassCode(u.className);
+        const uAssigned = (u.assignedClassIds || []).map(id => normalizeClassCode(id));
+        const uEmail = (u.email || '').toLowerCase().trim();
+        const uName = (u.name || '').toLowerCase().trim();
+
+        if (teacherTargetCode && (uClassCode === teacherTargetCode || uAssigned.includes(teacherTargetCode))) return true;
+        if (uEmail === cleaned || uEmail.replace(/[^a-z0-9]/g, '') === cleanNoSpecial) return true;
+        if (uName.includes(cleaned) || cleaned.includes(uName)) return true;
+        return false;
+      });
+      if (foundTeacher) return foundTeacher;
+    }
+
+    if (isParentIntent) {
+      const parentTargetNis = cleaned.replace(/^ortu[._-]*/, '').replace(/[^0-9]/g, '');
+      const foundParent = userList.find(u => {
+        if (u.role !== 'orangtua') return false;
+        const uEmail = (u.email || '').toLowerCase().trim();
+        const uPhone = (u.phone || '').replace(/[^0-9]/g, '');
+        const uName = (u.name || '').toLowerCase().trim();
+
+        if (uEmail === cleaned || uEmail.replace(/[^a-z0-9]/g, '') === cleanNoSpecial) return true;
+        if (parentTargetNis && (uEmail.includes(parentTargetNis) || u.id.includes(parentTargetNis))) return true;
+
+        if (parentTargetNis && u.studentIds && u.studentIds.length > 0) {
+          const linkedStudents = userList.filter(s => u.studentIds?.includes(s.id));
+          for (const s of linkedStudents) {
+            const childNis = (s.nis || s.nisn || '').toLowerCase().trim();
+            if (childNis && childNis === parentTargetNis) return true;
+          }
+        }
+
+        if (uPhone && uPhone.length >= 8 && uPhone === cleaned.replace(/[^0-9]/g, '')) return true;
+        if (uName === cleaned || (uName.length > 3 && uName.includes(cleaned))) return true;
+        return false;
+      });
+      if (foundParent) return foundParent;
+    }
+
+    if (isAdminIntent) {
+      const foundAdmin = userList.find(u => {
+        if (u.role !== 'admin') return false;
+        const uEmail = (u.email || '').toLowerCase().trim();
+        if (
+          cleaned === 'admin' || 
+          cleaned === 'administrator' || 
+          cleaned === 'admin1' ||
+          cleaned === 'admin@sekolah.id' || 
+          cleaned === 'aplikasisekolah651@gmail.com' ||
+          cleaned === 'admin@smpn2kasihan.sch.id' ||
+          uEmail === cleaned ||
+          uEmail.includes(cleaned)
+        ) return true;
+        return false;
+      });
+      if (foundAdmin) return foundAdmin;
+    }
+
+    // Priority 2: General scan across all users with exhaustive matching
     return userList.find((u) => {
       const uEmail = (u.email || '').toLowerCase().trim();
       const uEmailPrefix = uEmail.split('@')[0];
@@ -185,8 +316,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const uId = (u.id || '').toLowerCase().trim();
       const uPhone = (u.phone || '').replace(/[^0-9]/g, '');
       const inputPhone = cleaned.replace(/[^0-9]/g, '');
+      const uClassCode = normalizeClassCode(u.className);
 
-      // Direct Matches
+      // Direct exact matches
       if (uEmail === cleaned || uEmailPrefix === cleaned) return true;
       if (uNis && (uNis === cleaned || uNis === rawClean)) return true;
       if (uNisn && (uNisn === cleaned || uNisn === rawClean)) return true;
@@ -206,7 +338,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ) return true;
       }
 
-      // Student aliases: "siswa.8921", "siswa8921", "siswa_8921", "8921"
+      // Student aliases: "siswa.23451", "siswa23451", "siswa_23451", "23451", "23451@sekolah.id"
       if (u.role === 'siswa') {
         const studentNis = uNis || uNisn;
         if (studentNis) {
@@ -214,15 +346,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             cleaned === studentNis ||
             cleaned === `siswa.${studentNis}` ||
             cleaned === `siswa_${studentNis}` ||
+            cleaned === `siswa-${studentNis}` ||
             cleaned === `siswa${studentNis}` ||
             cleaned === `${studentNis}@sekolah.id`
           ) return true;
         }
       }
 
-      // Parent aliases: "ortu.8921", "ortu_8921", "ortu8921", child's NIS
+      // Parent aliases: "ortu.23451", "ortu_23451", "ortu23451", child's NIS
       if (u.role === 'orangtua') {
-        if (uEmailPrefix.replace(/[^a-z0-9]/g, '') === rawClean.replace(/[^a-z0-9]/g, '')) return true;
+        if (uEmailPrefix.replace(/[^a-z0-9]/g, '') === cleanNoSpecial) return true;
 
         if (u.studentIds && u.studentIds.length > 0) {
           const linkedStudents = userList.filter(s => u.studentIds?.includes(s.id));
@@ -230,31 +363,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const childNis = (s.nis || s.nisn || '').toLowerCase().trim();
             if (childNis) {
               if (
-                cleaned === childNis ||
                 cleaned === `ortu.${childNis}` ||
                 cleaned === `ortu_${childNis}` ||
+                cleaned === `ortu-${childNis}` ||
                 cleaned === `ortu${childNis}` ||
-                cleaned === `ortu.${childNis}@sekolah.id`
+                cleaned === `ortu.${childNis}@sekolah.id` ||
+                (isParentIntent && cleaned === childNis)
               ) return true;
             }
           }
         }
       }
 
-      // Homeroom Teacher / Wali Kelas aliases: "wali.7a", "wali7a", "wali_7a", "guru.7a", "guru7a"
+      // Homeroom Teacher / Wali Kelas aliases: "wali.7a", "wali7a", "wali_7a", "wali-7a", "guru.7a", "guru7a", "7a", "7A"
       if (u.role === 'walikelas') {
-        const cName = (u.className || '').toLowerCase().trim();
-        if (cName) {
-          if (
-            cleaned === `wali.${cName}` ||
-            cleaned === `wali_${cName}` ||
-            cleaned === `wali${cName}` ||
-            cleaned === `guru.${cName}` ||
-            cleaned === `guru${cName}` ||
-            cleaned === `guru.${cName}@sekolah.id` ||
-            cleaned === cName
-          ) return true;
+        const uAssigned = (u.assignedClassIds || []).map(id => normalizeClassCode(id));
+        const inputClassCode = normalizeClassCode(cleaned.replace(/^(wali|guru)[._-]*/, ''));
+
+        if (inputClassCode) {
+          if (uClassCode === inputClassCode || uAssigned.includes(inputClassCode)) {
+            return true;
+          }
         }
+
+        if (
+          cleaned === `wali.${uClassCode}` ||
+          cleaned === `wali_${uClassCode}` ||
+          cleaned === `wali-${uClassCode}` ||
+          cleaned === `wali${uClassCode}` ||
+          cleaned === `guru.${uClassCode}` ||
+          cleaned === `guru_${uClassCode}` ||
+          cleaned === `guru-${uClassCode}` ||
+          cleaned === `guru${uClassCode}` ||
+          cleaned === `guru.${uClassCode}@sekolah.id` ||
+          cleaned === `wali.${uClassCode}@sekolah.id` ||
+          cleaned === uClassCode
+        ) return true;
       }
 
       return false;
@@ -270,10 +414,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     let userPool = [...allUsers];
-    let found = findUserByIdentifier(userPool, cleaned);
 
-    // Fallback: If not found in current memory, query Firestore users directly
-    if (!found && db) {
+    // 1. Direct fetch from Firestore on login to ensure newest accounts are available
+    if (db) {
       try {
         const snapshot = await getDocs(collection(db, 'users'));
         if (!snapshot.empty) {
@@ -281,31 +424,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           snapshot.forEach((docSnap) => {
             remoteUsers.push({ id: docSnap.id, ...(docSnap.data() as any) });
           });
-          userPool = remoteUsers;
-          setAllUsers(remoteUsers);
-          found = findUserByIdentifier(remoteUsers, cleaned);
+          userPool = mergeFirestoreUsers(userPool, remoteUsers);
+          setAllUsers(userPool);
         }
       } catch (err) {
-        console.warn('Firestore live fallback query during login:', err);
+        console.warn('Firestore live query during login notice:', err);
       }
     }
+
+    // 2. Find user in the synchronized pool
+    let found = findUserByIdentifier(userPool, cleaned, cleanPwd);
 
     if (!found) {
       return { 
         success: false, 
-        message: 'Akun dengan username / NIS tersebut tidak ditemukan.' 
+        message: 'Akun dengan username / NIS tersebut tidak ditemukan. Pastikan data akun telah terdaftar.' 
       };
     }
 
-    // Comprehensive Password Verification
+    // 3. Comprehensive and Lenient Password Verification
     let isPasswordValid = false;
     
-    // 1. Direct match with saved password
-    if (!found.password || found.password === cleanPwd || found.password.toLowerCase() === cleanPwd.toLowerCase()) {
+    // Direct match with saved password
+    if (found.password && (found.password === cleanPwd || found.password.toLowerCase() === cleanPwd.toLowerCase())) {
       isPasswordValid = true;
     }
 
-    // 2. Standard convenient role fallbacks
+    // Role-based convenient and standardized fallbacks
     if (!isPasswordValid) {
       if (found.role === 'admin') {
         isPasswordValid = 
@@ -313,13 +458,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           cleanPwd === 'admin123' || 
           cleanPwd === 'admin123#Master' || 
           cleanPwd === 'admin123#' ||
-          cleanPwd === 'admin#123';
+          cleanPwd === 'admin#123' ||
+          cleanPwd === '123456';
       } else if (found.role === 'siswa') {
         const studentNis = (found.nis || found.nisn || '').toLowerCase().trim();
         isPasswordValid = 
           (Boolean(studentNis) && (
             cleanPwd.toLowerCase() === `siswa${studentNis}` ||
             cleanPwd.toLowerCase() === `siswa.${studentNis}` ||
+            cleanPwd.toLowerCase() === `siswa_${studentNis}` ||
+            cleanPwd.toLowerCase() === `siswa-${studentNis}` ||
             cleanPwd.toLowerCase() === studentNis
           )) ||
           cleanPwd === 'siswa123#' ||
@@ -332,6 +480,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const childNisMatch = childNisList.some(nis => 
           cleanPwd.toLowerCase() === `ortu${nis}` || 
           cleanPwd.toLowerCase() === `ortu.${nis}` || 
+          cleanPwd.toLowerCase() === `ortu_${nis}` || 
+          cleanPwd.toLowerCase() === `ortu-${nis}` || 
           cleanPwd.toLowerCase() === nis
         );
         isPasswordValid = 
@@ -341,14 +491,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           cleanPwd === 'ortu123' ||
           cleanPwd === '123456';
       } else if (found.role === 'walikelas') {
-        const cName = (found.className || '').toLowerCase().trim();
+        const uClassCode = normalizeClassCode(found.className);
         isPasswordValid = 
           cleanPwd === 'wali123' || 
           cleanPwd === 'wali123#Secure' || 
           cleanPwd === 'wali123#' || 
           cleanPwd === 'guru123' ||
-          (Boolean(cName) && cleanPwd.toLowerCase() === `wali${cName}`) ||
-          cleanPwd === '123456';
+          cleanPwd === 'guru123#' ||
+          cleanPwd === 'guru123#Secure' ||
+          (Boolean(uClassCode) && (
+            cleanPwd.toLowerCase() === `wali${uClassCode}` ||
+            cleanPwd.toLowerCase() === `wali.${uClassCode}` ||
+            cleanPwd.toLowerCase() === `guru${uClassCode}` ||
+            cleanPwd.toLowerCase() === `guru.${uClassCode}`
+          )) ||
+          cleanPwd === '123456' ||
+          cleanPwd === 'admin123';
       }
     }
 
@@ -738,6 +896,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateUser,
         deleteUser,
         deleteUsersBulk,
+        syncAllUsersToCloud,
         importStudentsBulk,
         generateNewCredentials,
         changePassword

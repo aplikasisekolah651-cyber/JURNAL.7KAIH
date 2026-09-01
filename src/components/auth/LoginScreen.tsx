@@ -152,11 +152,17 @@ export const LoginScreen: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick Guidance Info for Mobile */}
-          <div className="mt-5 p-3 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 text-[11px] text-slate-600 dark:text-slate-300 space-y-1">
-            <p className="font-bold text-indigo-900 dark:text-indigo-300">Panduan Masuk Cepat:</p>
-            <p>• <strong>Siswa</strong>: Gunakan <em>NIS</em> (Kata sandi: <code>siswa[NIS]</code>)</p>
-            <p>• <strong>Orang Tua</strong>: Gunakan <em>ortu.[NIS]</em> (Kata sandi: <code>ortu[NIS]</code>)</p>
+          {/* Quick Guidance Info for Cross-Device Login */}
+          <div className="mt-5 p-3.5 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 text-[11px] text-slate-600 dark:text-slate-300 space-y-1.5">
+            <p className="font-bold text-indigo-900 dark:text-indigo-300 flex items-center justify-between">
+              <span>Panduan Masuk Pengguna:</span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">☁️ Sinkron Cloud</span>
+            </p>
+            <div className="space-y-1 text-[11px]">
+              <p>• <strong>Siswa</strong>: Username <em>NIS</em> (Sandi: <code>siswa[NIS]</code>)</p>
+              <p>• <strong>Orang Tua</strong>: Username <em>ortu.[NIS]</em> (Sandi: <code>ortu[NIS]</code>)</p>
+              <p>• <strong>Wali Kelas</strong>: Username <em>wali.[Kelas]</em> (Sandi: <code>wali123#Secure</code> atau <code>wali[Kelas]</code>)</p>
+            </div>
           </div>
 
           {/* Security Guarantee & School Footer */}

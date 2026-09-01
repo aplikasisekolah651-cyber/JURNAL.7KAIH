@@ -62,9 +62,33 @@ import * as XLSX from 'xlsx';
 type AdminMenuKey = 'overview' | 'students' | 'parents' | 'teachers' | 'journals' | 'reports' | 'import' | 'credentials' | 'settings' | 'database';
 
 export const AdminDashboard: React.FC = () => {
-  const { allUsers, addUser, updateUser, deleteUser, deleteUsersBulk, importStudentsBulk, generateNewCredentials } = useAuth();
+  const { allUsers, addUser, updateUser, deleteUser, deleteUsersBulk, importStudentsBulk, generateNewCredentials, syncAllUsersToCloud } = useAuth();
   const { journals, getStudentJournals } = useJournal();
   const { schoolSettings } = useSchoolSettings();
+
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [cloudSyncSuccess, setCloudSyncSuccess] = useState<string | null>(null);
+
+  const handleManualCloudSync = async () => {
+    setIsCloudSyncing(true);
+    setCloudSyncSuccess(null);
+    try {
+      const res = await syncAllUsersToCloud();
+      if (res.success) {
+        setCloudSyncSuccess(`Berhasil sinkronisasi ${res.count} akun ke Cloud Firestore! Sekarang seluruh akun dapat login di semua perangkat.`);
+      } else {
+        setCloudSyncSuccess(`Peringatan: Sinkronisasi selesai.`);
+      }
+    } catch (e) {
+      console.error('Manual sync error:', e);
+      setCloudSyncSuccess('Terjadi kendala sinkronisasi ke cloud.');
+    } finally {
+      setIsCloudSyncing(false);
+      setTimeout(() => {
+        setCloudSyncSuccess(null);
+      }, 6000);
+    }
+  };
 
   // Dynamically extract all available classes strictly matching imported students
   const availableClasses = useMemo(() => {
@@ -2536,6 +2560,16 @@ export const AdminDashboard: React.FC = () => {
 
               <div className="flex flex-wrap items-center gap-2">
                 <button
+                  onClick={handleManualCloudSync}
+                  disabled={isCloudSyncing}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                  title="Sinkronkan seluruh akun ke Cloud Firestore agar dapat login di semua perangkat"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isCloudSyncing ? 'Menyinkronkan...' : '☁️ Sinkron Cloud Multi-Perangkat'}</span>
+                </button>
+
+                <button
                   onClick={() => handleCopyWhatsAppBroadcast(credentialFilterClass)}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs active:scale-95"
                 >
@@ -2552,6 +2586,13 @@ export const AdminDashboard: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {cloudSyncSuccess && (
+              <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700 rounded-xl flex items-center gap-2.5 text-xs text-emerald-800 dark:text-emerald-200 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{cloudSyncSuccess}</span>
+              </div>
+            )}
 
             {/* Filter Tools & Mode Switcher */}
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200/80 dark:border-slate-800">
