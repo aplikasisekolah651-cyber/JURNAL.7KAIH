@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User account in 7 KAIH system (students, parents, teachers, admins)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["siswa", "orangtua", "walikelas", "admin"] },
+        "gender": { "type": "string" },
+        "nis": { "type": "string" },
+        "nisn": { "type": "string" },
+        "attendanceNumber": { "type": "string" },
+        "noAbsen": { "type": "string" },
+        "classId": { "type": "string" },
+        "className": { "type": "string" },
+        "parentId": { "type": "string" },
+        "studentIds": { "type": "array", "items": { "type": "string" } },
+        "assignedClassIds": { "type": "array", "items": { "type": "string" } },
+        "phone": { "type": "string" },
+        "avatar": { "type": "string" },
+        "password": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "role"]
+    },
+    "JournalEntry": {
+      "title": "JournalEntry",
+      "description": "Daily 7 KAIH journal entry submitted by a student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentNis": { "type": "string" },
+        "className": { "type": "string" },
+        "date": { "type": "string" },
+        "habits": { "type": "object" },
+        "overallScore": { "type": "number" },
+        "completedCount": { "type": "number" },
+        "kategoriLevel": { "type": "string" },
+        "isEncrypted": { "type": "boolean" },
+        "encryptedReflection": { "type": "string" },
+        "photoProof": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "studentId", "date"]
+    },
+    "SchoolSetting": {
+      "title": "SchoolSetting",
+      "description": "School identity and letterhead configurations",
+      "type": "object",
+      "properties": {
+        "schoolName": { "type": "string" },
+        "customLogoUrl": { "type": "string" },
+        "principalName": { "type": "string" },
+        "principalNip": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "semester": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "entity": "User",
+      "description": "Collection of all system user accounts"
+    },
+    "journals/{journalId}": {
+      "entity": "JournalEntry",
+      "description": "Collection of all student 7 KAIH daily journals"
+    },
+    "settings/{settingId}": {
+      "entity": "SchoolSetting",
+      "description": "Global school settings and logos"
+    }
+  }
+}

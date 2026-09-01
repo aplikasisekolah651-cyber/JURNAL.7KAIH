@@ -12,7 +12,7 @@ import { DEFAULT_REMINDERS, HABIT_LIST } from '../lib/constants';
 import { getDateString } from '../lib/mockData';
 import { audioNotifier } from '../lib/audioNotifier';
 import { E2EEService } from '../lib/crypto';
-import { db } from '../lib/firebase';
+import { db, cleanForFirestore } from '../lib/firebase';
 import { collection, setDoc, doc, onSnapshot, deleteDoc, getDocs } from 'firebase/firestore';
 
 interface JournalContextType {
@@ -138,32 +138,59 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications));
   }, [notifications]);
 
-  // Firestore background sync
+  // Firestore background sync & initial direct fetch
   useEffect(() => {
-    if (db) {
-      try {
-        const unsub = onSnapshot(collection(db, 'journals'), (snapshot) => {
-          if (!snapshot.empty) {
-            const firestoreJournals: JournalEntry[] = [];
-            snapshot.forEach((docSnap) => {
-              firestoreJournals.push({ id: docSnap.id, ...(docSnap.data() as any) });
-            });
-            if (firestoreJournals.length > 0) {
-              setJournals(prev => {
-                const map = new Map<string, JournalEntry>();
-                prev.forEach(j => map.set(j.id, j));
-                firestoreJournals.forEach(j => map.set(j.id, j));
-                return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
-              });
-            }
-          }
-        }, (err) => {
-          console.warn('Firestore journals fallback:', err);
+    if (!db) return;
+
+    let isMounted = true;
+    const journalsColRef = collection(db, 'journals');
+
+    // 1. Direct initial fetch for instant cross-device visibility
+    getDocs(journalsColRef).then((snapshot) => {
+      if (isMounted && !snapshot.empty) {
+        const firestoreJournals: JournalEntry[] = [];
+        snapshot.forEach((docSnap) => {
+          firestoreJournals.push({ id: docSnap.id, ...(docSnap.data() as any) });
         });
-        return () => unsub();
-      } catch (e) {
-        console.warn('Firestore init err:', e);
+        if (firestoreJournals.length > 0) {
+          setJournals(prev => {
+            const map = new Map<string, JournalEntry>();
+            prev.forEach(j => map.set(j.id, j));
+            firestoreJournals.forEach(j => map.set(j.id, j));
+            return Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          });
+        }
       }
+    }).catch(err => {
+      console.warn('Firestore journals direct fetch notice:', err);
+    });
+
+    // 2. Real-time snapshot listener
+    try {
+      const unsub = onSnapshot(journalsColRef, (snapshot) => {
+        if (!snapshot.empty && isMounted) {
+          const firestoreJournals: JournalEntry[] = [];
+          snapshot.forEach((docSnap) => {
+            firestoreJournals.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          });
+          if (firestoreJournals.length > 0) {
+            setJournals(prev => {
+              const map = new Map<string, JournalEntry>();
+              prev.forEach(j => map.set(j.id, j));
+              firestoreJournals.forEach(j => map.set(j.id, j));
+              return Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            });
+          }
+        }
+      }, (err) => {
+        console.warn('Firestore journals listener notice:', err);
+      });
+      return () => {
+        isMounted = false;
+        unsub();
+      };
+    } catch (e) {
+      console.warn('Firestore init err:', e);
     }
   }, []);
 
@@ -271,7 +298,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Attempt cloud firestore write
     if (db) {
       try {
-        await setDoc(doc(db, 'journals', entryId), fullEntry);
+        await setDoc(doc(db, 'journals', entryId), cleanForFirestore(fullEntry));
       } catch (e) {
         console.warn('Firestore journal write fallback:', e);
       }
@@ -346,7 +373,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (db) {
       try {
-        await setDoc(doc(db, 'journals', journalId), updated, { merge: true });
+        await setDoc(doc(db, 'journals', journalId), cleanForFirestore(updated), { merge: true });
       } catch (e) {
         console.warn('Firestore parent validation sync:', e);
       }
@@ -391,7 +418,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (db) {
       try {
-        await setDoc(doc(db, 'journals', journalId), updated, { merge: true });
+        await setDoc(doc(db, 'journals', journalId), cleanForFirestore(updated), { merge: true });
       } catch (e) {
         console.warn('Firestore teacher feedback sync:', e);
       }

@@ -14,6 +14,7 @@ export const SchoolLogo: React.FC<SchoolLogoProps> = ({
   forceSvg = false,
   customLogoUrl: customLogoProp
 }) => {
+  const [imgError, setImgError] = React.useState(false);
   let contextLogoUrl = '';
   try {
     const settingsContext = useSchoolSettings();
@@ -24,11 +25,17 @@ export const SchoolLogo: React.FC<SchoolLogoProps> = ({
 
   const effectiveLogoUrl = customLogoProp || contextLogoUrl;
 
-  if (effectiveLogoUrl && !forceSvg) {
+  // Reset error state if logo URL changes
+  React.useEffect(() => {
+    setImgError(false);
+  }, [effectiveLogoUrl]);
+
+  if (effectiveLogoUrl && !forceSvg && !imgError) {
     return (
       <img
         src={effectiveLogoUrl}
         alt="Logo Sekolah"
+        onError={() => setImgError(true)}
         className={`${className} object-contain rounded-lg`}
         style={size ? { width: size, height: size } : undefined}
       />

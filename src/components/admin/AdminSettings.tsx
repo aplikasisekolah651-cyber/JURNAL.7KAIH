@@ -26,19 +26,20 @@ import confetti from 'canvas-confetti';
 import { audioNotifier } from '../../lib/audioNotifier';
 
 export const AdminSettings: React.FC = () => {
-  const { schoolSettings, updateSchoolSettings, resetSchoolSettings, isSyncedWithDb } = useSchoolSettings();
+  const { schoolSettings, updateSchoolSettings, saveSchoolLogo, removeSchoolLogo, resetSchoolSettings, isSyncedWithDb } = useSchoolSettings();
   const [formData, setFormData] = useState<SchoolSettings>({ ...schoolSettings });
   const [isSaved, setIsSaved] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string>(schoolSettings.customLogoUrl || '');
+  const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync form data if settings update from database in background
   useEffect(() => {
     setFormData(prev => ({
       ...schoolSettings,
-      // preserve local changes if user is actively typing
-      ...(isSaved ? {} : {})
+      // preserve custom logo state
+      customLogoUrl: schoolSettings.customLogoUrl !== undefined ? schoolSettings.customLogoUrl : prev.customLogoUrl
     }));
     if (schoolSettings.customLogoUrl !== undefined) {
       setLogoPreview(schoolSettings.customLogoUrl || '');
@@ -53,13 +54,17 @@ export const AdminSettings: React.FC = () => {
     setIsSaved(false);
   };
 
+  /**
+   * Compresses and optimizes any uploaded image to an ultra-compact Base64 string (~15KB-30KB)
+   * so it fits well within Firestore limits and syncs instantaneously across all devices.
+   */
   const compressAndOptimizeLogo = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          const maxDim = 360;
+          const maxDim = 256; // 256x256 retina-ready for logo display
           let { width, height } = img;
           if (width > maxDim || height > maxDim) {
             if (width > height) {
@@ -71,20 +76,31 @@ export const AdminSettings: React.FC = () => {
             }
           }
           const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
+          canvas.width = Math.max(1, width);
+          canvas.height = Math.max(1, height);
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
+            ctx.clearRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
-            const optimizedBase64 = canvas.toDataURL('image/png');
-            resolve(optimizedBase64);
+
+            // Try WebP with fallback to PNG
+            let dataUrl = '';
+            try {
+              dataUrl = canvas.toDataURL('image/webp', 0.88);
+              if (!dataUrl.startsWith('data:image/webp')) {
+                dataUrl = canvas.toDataURL('image/png');
+              }
+            } catch {
+              dataUrl = canvas.toDataURL('image/png');
+            }
+            resolve(dataUrl);
           } else {
             resolve(e.target?.result as string);
           }
         };
-        img.onerror = () => reject(new Error('Gagal memproses gambar'));
+        img.onerror = () => reject(new Error('Gagal memproses file gambar'));
         img.src = e.target?.result as string;
       };
       reader.onerror = () => reject(new Error('Gagal membaca file'));
@@ -96,46 +112,65 @@ export const AdminSettings: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Ukuran file logo maksimal 5MB.');
+    if (file.size > 8 * 1024 * 1024) {
+      alert('Ukuran file logo maksimal 8MB.');
       return;
     }
 
     setIsUploadingLogo(true);
+    setUploadSuccessMsg('');
     try {
       const optimizedBase64 = await compressAndOptimizeLogo(file);
+      
+      // Update local preview and form data
       setLogoPreview(optimizedBase64);
       setFormData(prev => ({
         ...prev,
         customLogoUrl: optimizedBase64
       }));
-      // Auto save to database
-      await updateSchoolSettings({ customLogoUrl: optimizedBase64 });
-      setIsSaved(true);
-      audioNotifier.playSuccessChime();
-      setTimeout(() => setIsSaved(false), 3000);
+
+      // Directly persist to Firestore Database so it immediately syncs to all devices
+      const success = await saveSchoolLogo(optimizedBase64);
+      if (success) {
+        setUploadSuccessMsg('Logo sekolah berhasil disimpan ke database cloud dan tersinkron ke semua perangkat!');
+        setIsSaved(true);
+        audioNotifier.playSuccessChime();
+        setTimeout(() => {
+          setUploadSuccessMsg('');
+          setIsSaved(false);
+        }, 5000);
+      } else {
+        alert('Gagal menyimpan logo ke database cloud. Silakan coba lagi.');
+      }
     } catch (err) {
       console.error('Logo upload error:', err);
       alert('Terjadi kesalahan saat memproses logo.');
     } finally {
       setIsUploadingLogo(false);
+      if (e.target) e.target.value = '';
     }
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    await updateSchoolSettings(formData);
-    setIsSaved(true);
-    confetti({
-      particleCount: 60,
-      spread: 60,
-      origin: { y: 0.7 }
-    });
-    audioNotifier.playSuccessChime();
+    const payload = {
+      ...formData,
+      customLogoUrl: logoPreview || formData.customLogoUrl || ''
+    };
+    const success = await updateSchoolSettings(payload);
+    if (success) {
+      setIsSaved(true);
+      confetti({
+        particleCount: 60,
+        spread: 60,
+        origin: { y: 0.7 }
+      });
+      audioNotifier.playSuccessChime();
 
-    setTimeout(() => {
-      setIsSaved(false);
-    }, 4000);
+      setTimeout(() => {
+        setIsSaved(false);
+      }, 4000);
+    }
   };
 
   const handleReset = async () => {
@@ -153,9 +188,13 @@ export const AdminSettings: React.FC = () => {
       ...prev,
       customLogoUrl: ''
     }));
-    await updateSchoolSettings({ customLogoUrl: '' });
+    await removeSchoolLogo();
     setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
+    setUploadSuccessMsg('Logo kustom dihapus. Kembali menggunakan logo bawaan.');
+    setTimeout(() => {
+      setIsSaved(false);
+      setUploadSuccessMsg('');
+    }, 4000);
   };
 
   return (
@@ -478,15 +517,26 @@ export const AdminSettings: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                  disabled={isUploadingLogo}
+                  className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
                 >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Unggah Logo</span>
+                  {isUploadingLogo ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Menyimpan ke Cloud...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Unggah Logo</span>
+                    </>
+                  )}
                 </button>
 
                 {logoPreview && (
                   <button
                     type="button"
+                    disabled={isUploadingLogo}
                     onClick={handleRemoveCustomLogo}
                     className="py-2 px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 text-xs font-bold border border-rose-200 dark:border-rose-800 transition-colors"
                   >
@@ -494,10 +544,17 @@ export const AdminSettings: React.FC = () => {
                   </button>
                 )}
               </div>
+
+              {uploadSuccessMsg && (
+                <div className="w-full p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-[11px] font-semibold flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>{uploadSuccessMsg}</span>
+                </div>
+              )}
             </div>
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              💡 Logo sekolah khusus digunakan untuk <strong>Halaman Login</strong> dan identitas aplikasi. Sesuai format resmi, <strong>Kop Surat</strong> menggunakan format teks resmi instansi tanpa logo.
+              💡 Logo sekolah khusus digunakan untuk <strong>Halaman Login</strong>, header aplikasi, dan identitas sistem. Logo tersimpan otomatis di database cloud sehingga dapat dilihat dari HP, laptop, dan semua perangkat lain.
             </p>
           </div>
 

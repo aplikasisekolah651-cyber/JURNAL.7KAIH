@@ -6,9 +6,12 @@ import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 
 interface SchoolContextType {
   schoolSettings: SchoolSettings;
-  updateSchoolSettings: (updates: Partial<SchoolSettings>) => Promise<void>;
+  updateSchoolSettings: (updates: Partial<SchoolSettings>) => Promise<boolean>;
+  saveSchoolLogo: (base64Logo: string) => Promise<boolean>;
+  removeSchoolLogo: () => Promise<boolean>;
   resetSchoolSettings: () => Promise<void>;
   isSyncedWithDb: boolean;
+  isLoadingFromDb: boolean;
 }
 
 const SchoolContext = createContext<SchoolContextType | undefined>(undefined);
@@ -17,6 +20,7 @@ const SCHOOL_SETTINGS_STORAGE_KEY = '7kaih_school_settings_v1';
 
 export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isSyncedWithDb, setIsSyncedWithDb] = useState(false);
+  const [isLoadingFromDb, setIsLoadingFromDb] = useState(true);
   const [schoolSettings, setSchoolSettings] = useState<SchoolSettings>(() => {
     const saved = localStorage.getItem(SCHOOL_SETTINGS_STORAGE_KEY);
     if (saved) {
@@ -35,57 +39,71 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       localStorage.setItem(SCHOOL_SETTINGS_STORAGE_KEY, JSON.stringify(schoolSettings));
     } catch (e) {
-      console.warn('Local storage quota warning:', e);
+      console.warn('Local storage quota warning for school settings:', e);
     }
   }, [schoolSettings]);
 
   // Firestore real-time sync listener & immediate initial fetch
   useEffect(() => {
-    if (!db) return;
+    if (!db) {
+      setIsLoadingFromDb(false);
+      return;
+    }
 
     let isMounted = true;
     const settingsDocRef = doc(db, 'settings', 'school');
 
-    // 1. Immediate fetch from Cloud Firestore Database
-    getDoc(settingsDocRef).then((docSnap) => {
-      if (isMounted && docSnap.exists()) {
-        const data = docSnap.data() as Partial<SchoolSettings>;
-        setSchoolSettings(prev => ({
-          ...prev,
-          ...data
-        }));
-        setIsSyncedWithDb(true);
-      }
-    }).catch((err) => {
-      console.warn('Firestore school settings direct fetch fallback:', err);
-    });
-
-    // 2. Real-time onSnapshot listener
-    try {
-      const unsub = onSnapshot(settingsDocRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data() as Partial<SchoolSettings>;
-          if (isMounted) {
+    // 1. Immediate direct fetch from Cloud Firestore Database
+    getDoc(settingsDocRef)
+      .then((docSnap) => {
+        if (isMounted) {
+          if (docSnap.exists()) {
+            const data = docSnap.data() as Partial<SchoolSettings>;
             setSchoolSettings(prev => ({
               ...prev,
               ...data
             }));
             setIsSyncedWithDb(true);
           }
+          setIsLoadingFromDb(false);
+        }
+      })
+      .catch((err) => {
+        console.warn('Firestore school settings initial fetch notice:', err);
+        if (isMounted) setIsLoadingFromDb(false);
+      });
+
+    // 2. Real-time onSnapshot listener across all open devices
+    try {
+      const unsub = onSnapshot(settingsDocRef, (docSnap) => {
+        if (isMounted) {
+          if (docSnap.exists()) {
+            const data = docSnap.data() as Partial<SchoolSettings>;
+            setSchoolSettings(prev => ({
+              ...prev,
+              ...data
+            }));
+            setIsSyncedWithDb(true);
+          }
+          setIsLoadingFromDb(false);
         }
       }, (err) => {
-        console.warn('Firestore school settings listener fallback:', err);
+        console.warn('Firestore school settings real-time listener notice:', err);
+        if (isMounted) setIsLoadingFromDb(false);
       });
+
       return () => {
         isMounted = false;
         unsub();
       };
     } catch (e) {
-      console.warn('Firestore school settings init error:', e);
+      console.warn('Firestore school settings listener initialization notice:', e);
+      setIsLoadingFromDb(false);
     }
   }, []);
 
-  const updateSchoolSettings = async (updates: Partial<SchoolSettings>) => {
+  const updateSchoolSettings = async (updates: Partial<SchoolSettings>): Promise<boolean> => {
+    // 1. Update React state immediately
     setSchoolSettings((prev) => {
       const updated = { ...prev, ...updates };
       try {
@@ -96,14 +114,27 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return updated;
     });
 
+    // 2. Persist to Firestore Cloud Database
     if (db) {
       try {
-        await setDoc(doc(db, 'settings', 'school'), updates, { merge: true });
+        const settingsDocRef = doc(db, 'settings', 'school');
+        await setDoc(settingsDocRef, updates, { merge: true });
         setIsSyncedWithDb(true);
+        return true;
       } catch (e) {
-        console.warn('Firestore school settings write fallback:', e);
+        console.error('Firestore school settings save error:', e);
+        return false;
       }
     }
+    return true;
+  };
+
+  const saveSchoolLogo = async (base64Logo: string): Promise<boolean> => {
+    return await updateSchoolSettings({ customLogoUrl: base64Logo });
+  };
+
+  const removeSchoolLogo = async (): Promise<boolean> => {
+    return await updateSchoolSettings({ customLogoUrl: '' });
   };
 
   const resetSchoolSettings = async () => {
@@ -115,9 +146,11 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     if (db) {
       try {
-        await setDoc(doc(db, 'settings', 'school'), DEFAULT_SCHOOL_SETTINGS);
+        const settingsDocRef = doc(db, 'settings', 'school');
+        await setDoc(settingsDocRef, DEFAULT_SCHOOL_SETTINGS);
+        setIsSyncedWithDb(true);
       } catch (e) {
-        console.warn('Firestore school settings reset fallback:', e);
+        console.warn('Firestore school settings reset notice:', e);
       }
     }
   };
@@ -127,8 +160,11 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       value={{
         schoolSettings,
         updateSchoolSettings,
+        saveSchoolLogo,
+        removeSchoolLogo,
         resetSchoolSettings,
-        isSyncedWithDb
+        isSyncedWithDb,
+        isLoadingFromDb
       }}
     >
       {children}

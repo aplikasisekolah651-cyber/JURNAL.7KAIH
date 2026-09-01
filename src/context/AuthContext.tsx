@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { DEMO_USERS } from '../lib/constants';
 import { E2EEService } from '../lib/crypto';
-import { db } from '../lib/firebase';
+import { db, cleanForFirestore } from '../lib/firebase';
 import { collection, getDocs, doc, setDoc, deleteDoc, onSnapshot, writeBatch } from 'firebase/firestore';
 import { 
   getUserAvatarUrl, 
@@ -95,6 +95,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [allUsers]);
 
+  // Helper to safely merge remote users from Firestore with local state
+  const mergeFirestoreUsers = (prevUsers: User[], firestoreUsers: User[]): User[] => {
+    const map = new Map<string, User>();
+    
+    // 1. Put demo admin and teachers as safety fallbacks
+    DEMO_USERS.filter(u => u.role === 'admin' || u.role === 'walikelas').forEach(u => {
+      map.set(u.id, {
+        ...u,
+        avatar: getUserAvatarUrl(u)
+      });
+    });
+
+    // 2. Put existing local users
+    prevUsers.forEach(u => {
+      map.set(u.id, {
+        ...u,
+        className: u.className ? normalizeClassName(u.className) : u.className,
+        avatar: getUserAvatarUrl(u)
+      });
+    });
+
+    // 3. Put remote firestore users (Cloud is the authoritative source of truth)
+    firestoreUsers.forEach(u => {
+      map.set(u.id, {
+        ...u,
+        className: u.className ? normalizeClassName(u.className) : u.className,
+        avatar: getUserAvatarUrl(u)
+      });
+    });
+
+    return Array.from(map.values());
+  };
+
   // Real-time Firestore sync listener & initial fetch
   useEffect(() => {
     if (!db) return;
@@ -102,7 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
     const usersColRef = collection(db, 'users');
 
-    // 1. Immediate fetch from Firestore
+    // 1. Immediate direct fetch from Firestore
     getDocs(usersColRef).then((snapshot) => {
       if (isMounted && !snapshot.empty) {
         const firestoreUsers: User[] = [];
@@ -110,44 +143,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           firestoreUsers.push({ id: docSnap.id, ...(docSnap.data() as any) });
         });
         if (firestoreUsers.length > 0) {
-          setAllUsers(prev => {
-            const map = new Map<string, User>();
-            prev.forEach(u => map.set(u.id, u));
-            firestoreUsers.forEach(u => map.set(u.id, u));
-            return Array.from(map.values());
-          });
+          setAllUsers(prev => mergeFirestoreUsers(prev, firestoreUsers));
         }
       }
     }).catch((err) => {
-      console.warn('Firestore users direct fetch fallback:', err);
+      console.warn('Firestore users direct fetch notice:', err);
     });
 
-    // 2. Real-time snapshot listener
+    // 2. Real-time snapshot listener across all connected devices
     try {
       const unsub = onSnapshot(usersColRef, (snapshot) => {
-        if (!snapshot.empty) {
+        if (!snapshot.empty && isMounted) {
           const firestoreUsers: User[] = [];
           snapshot.forEach((docSnap) => {
             firestoreUsers.push({ id: docSnap.id, ...(docSnap.data() as any) });
           });
-          if (firestoreUsers.length > 0 && isMounted) {
-            setAllUsers(prev => {
-              const map = new Map<string, User>();
-              prev.forEach(u => map.set(u.id, u));
-              firestoreUsers.forEach(u => map.set(u.id, u));
-              return Array.from(map.values());
-            });
+          if (firestoreUsers.length > 0) {
+            setAllUsers(prev => mergeFirestoreUsers(prev, firestoreUsers));
           }
         }
       }, (err) => {
-        console.warn('Firestore users listener fallback to local:', err);
+        console.warn('Firestore users listener notice:', err);
       });
       return () => {
         isMounted = false;
         unsub();
       };
     } catch (e) {
-      console.warn('Firestore users init:', e);
+      console.warn('Firestore users init err:', e);
     }
   }, []);
 
@@ -433,7 +456,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (db) {
       try {
-        await setDoc(doc(db, 'users', newId), newUser);
+        await setDoc(doc(db, 'users', newId), cleanForFirestore(newUser));
       } catch (e) {
         console.warn('Firestore write user fallback:', e);
       }
@@ -455,7 +478,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (db) {
       try {
-        await setDoc(doc(db, 'users', userId), updates, { merge: true });
+        await setDoc(doc(db, 'users', userId), cleanForFirestore(updates), { merge: true });
       } catch (e) {
         console.warn('Firestore user update fallback:', e);
       }
@@ -678,21 +701,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return updated;
     });
 
-    // Realtime persistence to Firestore (chunked in safe batches of 400 operations)
+    // Realtime persistence to Firestore (chunked in safe batches with cleanForFirestore)
     if (db) {
       try {
         const allNew = [...newStudents, ...newParents];
-        const chunkSize = 400;
+        const chunkSize = 100;
         for (let i = 0; i < allNew.length; i += chunkSize) {
           const chunk = allNew.slice(i, i + chunkSize);
           const batch = writeBatch(db);
           chunk.forEach(u => {
-            batch.set(doc(db, 'users', u.id), u);
+            batch.set(doc(db, 'users', u.id), cleanForFirestore(u));
           });
           await batch.commit();
         }
+        console.log(`Successfully synced ${allNew.length} imported user accounts to Cloud Firestore!`);
       } catch (e) {
-        console.warn('Firestore write batch fallback:', e);
+        console.error('Firestore write batch error during import:', e);
       }
     }
 

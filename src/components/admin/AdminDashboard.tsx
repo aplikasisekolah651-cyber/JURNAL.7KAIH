@@ -2482,16 +2482,23 @@ export const AdminDashboard: React.FC = () => {
               )}
 
               {importSuccessCount !== null && (
-                <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-emerald-800 dark:text-emerald-200 text-xs font-bold">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                    <span>Sukses! Berhasil mengimpor {importSuccessCount} siswa dan men-generate seluruh kredensial akun orang tua!</span>
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-emerald-900 dark:text-emerald-100 text-xs font-bold shadow-xs">
+                  <div className="flex items-start gap-2.5">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-extrabold text-sm text-emerald-800 dark:text-emerald-200">
+                        Sukses! Berhasil mengimpor {importSuccessCount} siswa & akun orang tua.
+                      </p>
+                      <p className="text-[11px] font-normal text-emerald-700 dark:text-emerald-300 mt-0.5">
+                        ☁️ Data telah otomatis tersimpan ke Database Cloud Firestore dan dapat langsung diakses dari perangkat HP/Laptop lain secara real-time.
+                      </p>
+                    </div>
                   </div>
                   <button
                     onClick={() => setActiveMenu('credentials')}
-                    className="px-3.5 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 shadow-xs transition-all shrink-0"
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 shadow-xs transition-all shrink-0 cursor-pointer"
                   >
-                    Buka Tab Kredensial
+                    Buka Tab Kredensial & Kartu
                   </button>
                 </div>
               )}
