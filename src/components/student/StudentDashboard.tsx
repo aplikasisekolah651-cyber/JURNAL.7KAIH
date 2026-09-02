@@ -447,25 +447,136 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
 
                     {/* Subtasks Detail Inputs */}
                     <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-3 text-xs sm:text-sm">
-                      {/* Custom UI for Ibadah (Multi-Religion Inclusive: Islam, Kristen, Katolik, Hindu, Buddha, Konghucu) */}
+                      {/* 1. Custom UI for Bangun Pagi (Jam Bangun Tidur & Pagi Hari) */}
+                      {habit.id === 'bangun_pagi' && (
+                        <div className="space-y-3">
+                          {/* Jam Bangun Tidur Card */}
+                          <div className="p-3 sm:p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 space-y-2.5">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <label className="text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                                <span className="text-base">⏰</span>
+                                <span>Jam Bangun Tidur:</span>
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="time"
+                                  value={itemData.values?.wakeTime || '04:45'}
+                                  onChange={(e) => {
+                                    handleUpdateSubValue('bangun_pagi', 'wakeTime', e.target.value);
+                                    if (!itemData.completed) handleToggleHabit('bangun_pagi');
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-sm sm:text-base font-black text-amber-900 dark:text-amber-200 outline-none focus:ring-2 focus:ring-amber-500"
+                                />
+                                <span className="text-xs font-bold text-amber-700 dark:text-amber-400">WIB</span>
+                              </div>
+                            </div>
+
+                            {/* Quick Presets for Wake Time */}
+                            <div className="space-y-1">
+                              <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 block">
+                                Pilihan Cepat Jam Bangun:
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {['04:15', '04:30', '04:45', '05:00', '05:15', '05:30'].map((timePreset) => {
+                                  const isSelected = (itemData.values?.wakeTime || '04:45') === timePreset;
+                                  return (
+                                    <button
+                                      key={timePreset}
+                                      type="button"
+                                      onClick={() => {
+                                        handleUpdateSubValue('bangun_pagi', 'wakeTime', timePreset);
+                                        if (!itemData.completed) handleToggleHabit('bangun_pagi');
+                                      }}
+                                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                                        isSelected
+                                          ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                                          : 'bg-white dark:bg-slate-900 text-amber-900 dark:text-amber-200 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40'
+                                      }`}
+                                    >
+                                      {timePreset}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Checkboxes: Merapikan Tempat Tidur & Minum Air Putih */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <label className="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 cursor-pointer text-slate-700 dark:text-slate-300 font-medium hover:border-amber-400 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={!!itemData.values?.bedMade}
+                                onChange={(e) => {
+                                  handleUpdateSubValue('bangun_pagi', 'bedMade', e.target.checked);
+                                  if (!itemData.completed && e.target.checked) handleToggleHabit('bangun_pagi');
+                                }}
+                                className="w-4 h-4 rounded text-amber-600 border-slate-300 focus:ring-amber-500"
+                              />
+                              <span>🛏️ Merapikan Tempat Tidur Sendiri</span>
+                            </label>
+
+                            <label className="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 cursor-pointer text-slate-700 dark:text-slate-300 font-medium hover:border-amber-400 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={!!itemData.values?.drinkWater}
+                                onChange={(e) => {
+                                  handleUpdateSubValue('bangun_pagi', 'drinkWater', e.target.checked);
+                                  if (!itemData.completed && e.target.checked) handleToggleHabit('bangun_pagi');
+                                }}
+                                className="w-4 h-4 rounded text-amber-600 border-slate-300 focus:ring-amber-500"
+                              />
+                              <span>💧 Minum Air Hangat/Putih saat Bangun</span>
+                            </label>
+                          </div>
+
+                          {/* Mood / Perasaan Pagi */}
+                          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-1.5">
+                            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 block">
+                              Kondisi Perasaan Pagi Ini:
+                            </span>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                              {['Sangat Bersemangat 😊', 'Ceria & Segar 😄', 'Cukup Segar 😐', 'Agak Mengantuk 🥱'].map((mood) => {
+                                const isSelected = itemData.values?.morningMood === mood;
+                                return (
+                                  <button
+                                    key={mood}
+                                    type="button"
+                                    onClick={() => handleUpdateSubValue('bangun_pagi', 'morningMood', mood)}
+                                    className={`py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-all cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-amber-500 text-white border-amber-600 font-bold shadow-xs'
+                                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    }`}
+                                  >
+                                    {mood}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 2. Custom UI for Ibadah (4 Agama: Islam, Katolik, Kristen, Hindu) */}
                       {habit.id === 'ibadah' && (() => {
                         const currentRel = (itemData.values?.religion || currentUser?.religion || 'Islam') as ReligionType;
                         const relConfig = getReligionConfig(currentRel);
 
                         return (
                           <div className="space-y-3">
-                            {/* Pilihan Agama Siswa */}
+                            {/* Pilihan Agama Siswa (4 Agama) */}
                             <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
                               <div className="flex items-center justify-between">
                                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                                   <span>{relConfig.icon}</span>
-                                  <span>Pilihan Agama / Kepercayaan:</span>
+                                  <span>Pilihan Agama (4 Agama):</span>
                                 </span>
                                 <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
                                   {relConfig.name}
                                 </span>
                               </div>
-                              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                                 {RELIGIONS_LIST.map((rel) => {
                                   const isSelected = currentRel === rel.id;
                                   return (
@@ -475,14 +586,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                       onClick={() => {
                                         handleUpdateSubValue('ibadah', 'religion', rel.id);
                                       }}
-                                      className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 border ${
+                                      className={`py-2 px-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
                                         isSelected
                                           ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white shadow-xs'
                                           : 'bg-white dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'
                                       }`}
                                     >
                                       <span>{rel.icon}</span>
-                                      <span className="truncate">{rel.name.split(' ')[0]}</span>
+                                      <span className="truncate">{rel.name}</span>
                                     </button>
                                   );
                                 })}
@@ -930,8 +1041,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                         </div>
                       )}
 
-                      {/* Default Generic Renderer for other habits (Bangun Pagi, Olahraga, Istirahat) */}
-                      {!['ibadah', 'makan_sehat', 'membaca', 'bermasyarakat'].includes(habit.id) && habit.subTasks.map((sub) => {
+                      {/* Default Generic Renderer for other habits (Olahraga, Istirahat) */}
+                      {!['bangun_pagi', 'ibadah', 'makan_sehat', 'membaca', 'bermasyarakat'].includes(habit.id) && habit.subTasks.map((sub) => {
                         const val = itemData.values?.[sub.key];
 
                         if (sub.type === 'checkbox') {

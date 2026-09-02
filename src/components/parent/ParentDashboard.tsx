@@ -28,7 +28,8 @@ import {
   X,
   MessageCircle,
   Save,
-  HelpCircle
+  HelpCircle,
+  Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { 
@@ -67,7 +68,8 @@ export const ParentDashboard: React.FC = () => {
     getStudentJournals, 
     getStudentStats,
     getStudentJournalByDate,
-    verifyHabitByParent
+    verifyHabitByParent,
+    batchVerifyHabitsByParent
   } = useJournal();
 
   // Active Tab: 'validation' (Daily 7 KAIH Review) vs 'progress' (Child Progress & Analytics) vs 'history' (Past Logs)
@@ -105,6 +107,9 @@ export const ParentDashboard: React.FC = () => {
   const [reasonDrafts, setReasonDrafts] = useState<Record<string, string>>({});
   const [activeReasonInput, setActiveReasonInput] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<string | null>(null);
+  const [isSavingAll, setIsSavingAll] = useState<boolean>(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [parentCustomNote, setParentCustomNote] = useState<string>('');
 
   // Quick preset reason options
   const presetReasons = [
@@ -177,20 +182,58 @@ export const ParentDashboard: React.FC = () => {
     setIsSaving(null);
   };
 
+  // Main Handler for Simpan button: saves and sends all selected confirmations
+  const handleSaveAllConfirmations = async () => {
+    if (!currentJournal || !currentUser) return;
+    setIsSavingAll(true);
+    try {
+      const verifications: Record<HabitId, { status: 'valid' | 'invalid'; reason?: string }> = {} as any;
+
+      HABIT_LIST.forEach(habit => {
+        const habitData = currentJournal.habits[habit.id] || { completed: false, values: {} };
+        const habitVerification = currentJournal.parentValidation?.habitVerifications?.[habit.id];
+        
+        const isExplicitInvalid = habitVerification?.status === 'invalid' || currentJournal.parentValidation?.disputedHabits?.includes(habit.id);
+        const isExplicitValid = habitVerification?.status === 'valid';
+
+        let status: 'valid' | 'invalid' = 'valid';
+        if (isExplicitInvalid) {
+          status = 'invalid';
+        } else if (isExplicitValid) {
+          status = 'valid';
+        } else {
+          status = habitData.completed ? 'valid' : 'valid';
+        }
+
+        const reason = reasonDrafts[habit.id] || habitVerification?.reason || (status === 'invalid' ? 'Tidak dilaksanakan di rumah' : '');
+
+        verifications[habit.id] = {
+          status,
+          reason
+        };
+      });
+
+      await batchVerifyHabitsByParent(
+        currentJournal.id,
+        verifications,
+        currentUser,
+        parentCustomNote || 'Semua konfirmasi 7 kebiasaan telah disimpan dan disetujui orang tua.'
+      );
+
+      confetti({ particleCount: 75, spread: 70, origin: { y: 0.6 } });
+      audioNotifier.playSuccessChime();
+      setSaveSuccessMsg('Konfirmasi 7 kebiasaan berhasil disimpan dan dikirim!');
+      setTimeout(() => setSaveSuccessMsg(null), 4000);
+    } catch (err) {
+      console.error('Error saving confirmations:', err);
+    } finally {
+      setIsSavingAll(false);
+    }
+  };
+
   // Handler for marking ALL 7 habits as Benar in one click
   const handleConfirmAllBenar = async () => {
-    if (!currentJournal || !currentUser) return;
-    for (const habit of HABIT_LIST) {
-      await verifyHabitByParent(
-        currentJournal.id,
-        habit.id,
-        'valid',
-        currentUser,
-        ''
-      );
-    }
-    confetti({ particleCount: 70, spread: 70, origin: { y: 0.6 } });
-    audioNotifier.playSuccessChime();
+    await handleSaveAllConfirmations();
   };
 
   // Export PDF
@@ -427,15 +470,42 @@ export const ParentDashboard: React.FC = () => {
                 <div className="flex items-center gap-2.5">
                   <button
                     type="button"
-                    onClick={handleConfirmAllBenar}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold shadow-sm transition-all active:scale-95 cursor-pointer"
-                    title="Konfirmasi bahwa semua 7 kebiasaan di bawah ini BENAR dilaksanakan di rumah"
+                    onClick={handleSaveAllConfirmations}
+                    disabled={isSavingAll}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs sm:text-sm font-bold shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer disabled:opacity-60"
+                    title="Simpan dan kirim konfirmasi 7 kebiasaan yang telah dipilih ke wali kelas & sekolah"
                   >
-                    <CheckCheck className="w-4 h-4" />
-                    <span>Konfirmasi Semua Benar ✓</span>
+                    {isSavingAll ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>Simpan</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
+
+              {/* Success Notification Alert */}
+              {saveSuccessMsg && (
+                <div className="p-3.5 sm:p-4 rounded-xl bg-emerald-500 text-white text-xs sm:text-sm font-bold flex items-center justify-between shadow-md transition-all animate-fadeIn">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-5 h-5 shrink-0" />
+                    <span>{saveSuccessMsg}</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => setSaveSuccessMsg(null)}
+                    className="text-white/80 hover:text-white text-xs font-normal underline cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              )}
 
               {/* 7 Habits Execution Cards with Benar & Tidak Buttons */}
               <div className="space-y-3.5">
@@ -550,16 +620,18 @@ export const ParentDashboard: React.FC = () => {
                         {habit.id === 'bangun_pagi' && (
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
                             <div>
-                              <span className="text-slate-400 block text-xs font-medium">⏰ Jam Bangun Subuh:</span>
+                              <span className="text-slate-400 block text-xs font-medium">⏰ Jam Bangun Tidur:</span>
                               <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{vals.wakeTime || '04:45'} WIB</span>
                             </div>
                             <div>
-                              <span className="text-slate-400 block text-xs font-medium">🙏 Ibadah Pagi / Subuh:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{vals.morningPrayer ? '✓ Dilakukan' : 'Tidak'}</span>
+                              <span className="text-slate-400 block text-xs font-medium">🛏️ Rapikan Tempat Tidur:</span>
+                              <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{vals.bedMade || vals.tidyBed ? '✓ Rapi Mandiri' : 'Belum'}</span>
                             </div>
                             <div>
-                              <span className="text-slate-400 block text-xs font-medium">🛏️ Rapikan Tempat Tidur:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{vals.tidyBed ? '✓ Rapi' : 'Belum'}</span>
+                              <span className="text-slate-400 block text-xs font-medium">💧 Air Putih & Perasaan:</span>
+                              <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">
+                                {vals.drinkWater ? '✓ Minum Air' : '-'} • {vals.morningMood || 'Bersemangat 😊'}
+                              </span>
                             </div>
                           </div>
                         )}
@@ -819,6 +891,65 @@ export const ParentDashboard: React.FC = () => {
                   </p>
                 </div>
               )}
+
+              {/* Bottom Confirmation Card with Note & Save Button */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                      <span>Konfirmasi & Kirim Hasil Verifikasi Orang Tua</span>
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Pilihan status "Benar" / "Tidak" pada setiap kebiasaan akan disimpan dan dikirimkan secara resmi kepada Wali Kelas.
+                    </p>
+                  </div>
+                  {currentJournal.parentValidation?.validated && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60 shrink-0">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Terkonfirmasi Orang Tua
+                    </span>
+                  )}
+                </div>
+
+                {/* Optional Parent Note to Teacher */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                    Pesan / Catatan Tambahan Orang Tua untuk Wali Kelas (Opsional):
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={parentCustomNote}
+                    onChange={(e) => setParentCustomNote(e.target.value)}
+                    placeholder="Contoh: Ananda hari ini sangat bersemangat membantu di rumah dan tertib beribadah tepat waktu..."
+                    className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs sm:text-sm text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-400 resize-none"
+                  />
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    Diproses oleh akun: <strong className="text-slate-700 dark:text-slate-300">{currentUser?.name}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSaveAllConfirmations}
+                    disabled={isSavingAll}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-sm font-bold shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer disabled:opacity-60"
+                  >
+                    {isSavingAll ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Menyimpan Konfirmasi...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>Simpan & Kirim Konfirmasi</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

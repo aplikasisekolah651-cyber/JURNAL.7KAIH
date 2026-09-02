@@ -39,6 +39,12 @@ interface JournalContextType {
     parentUser: User,
     reason?: string
   ) => Promise<void>;
+  batchVerifyHabitsByParent: (
+    journalId: string,
+    verifications: Record<HabitId, { status: 'valid' | 'invalid'; reason?: string }>,
+    parentUser: User,
+    notes?: string
+  ) => Promise<void>;
   giveTeacherFeedback: (journalId: string, teacherUser: User, notes: string, recommendation?: string, badge?: string) => Promise<void>;
   getStudentJournalByDate: (studentId: string, date: string) => JournalEntry | undefined;
   getStudentJournals: (studentId: string) => JournalEntry[];
@@ -468,6 +474,62 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const batchVerifyHabitsByParent = async (
+    journalId: string,
+    verifications: Record<HabitId, { status: 'valid' | 'invalid'; reason?: string }>,
+    parentUser: User,
+    notes?: string
+  ): Promise<void> => {
+    const target = journals.find(j => j.id === journalId);
+    if (!target) return;
+
+    const updatedVerifications: Record<string, { status: 'valid' | 'invalid'; reason: string; updatedAt: number }> = {};
+    (Object.keys(verifications) as HabitId[]).forEach(hId => {
+      const v = verifications[hId];
+      if (v) {
+        updatedVerifications[hId] = {
+          status: v.status,
+          reason: v.status === 'invalid' ? (v.reason || 'Tidak dilaksanakan di rumah') : '',
+          updatedAt: Date.now()
+        };
+      }
+    });
+
+    const disputedHabits = (Object.keys(updatedVerifications) as HabitId[]).filter(
+      hId => updatedVerifications[hId]?.status === 'invalid'
+    );
+
+    const hasAnyInvalid = disputedHabits.length > 0;
+
+    const updated: JournalEntry = {
+      ...target,
+      status: hasAnyInvalid ? 'needs_revision' : 'validated',
+      updatedAt: Date.now(),
+      parentValidation: {
+        validated: true,
+        status: hasAnyInvalid ? 'invalid' : 'valid',
+        validatedAt: Date.now(),
+        parentId: parentUser.id,
+        parentName: parentUser.name,
+        notes: notes || (hasAnyInvalid ? 'Ada kebiasaan yang ditandai tidak dilaksanakan di rumah.' : 'Semua 7 kebiasaan terkonfirmasi dan disetujui orang tua.'),
+        rating: hasAnyInvalid ? 3 : 5,
+        signatureStatus: !hasAnyInvalid,
+        disputedHabits,
+        habitVerifications: updatedVerifications as any
+      }
+    };
+
+    setJournals(prev => prev.map(j => (j.id === journalId ? updated : j)));
+
+    if (db) {
+      try {
+        await setDoc(doc(db, 'journals', journalId), cleanForFirestore(updated), { merge: true });
+      } catch (e) {
+        console.warn('Firestore batch parent verify sync:', e);
+      }
+    }
+  };
+
   const giveTeacherFeedback = async (
     journalId: string,
     teacherUser: User,
@@ -791,6 +853,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
         saveJournalEntry,
         validateByParent,
         verifyHabitByParent,
+        batchVerifyHabitsByParent,
         giveTeacherFeedback,
         getStudentJournalByDate,
         getStudentJournals,
