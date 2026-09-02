@@ -44,7 +44,7 @@ import { useSchoolSettings } from '../../context/SchoolContext';
 import { User, UserRole } from '../../types';
 import { E2EEService } from '../../lib/crypto';
 import { E2EEBadge } from '../common/E2EEBadge';
-import { SCHOOL_CONFIG } from '../../lib/constants';
+import { SCHOOL_CONFIG, RELIGIONS_LIST } from '../../lib/constants';
 import { UserAvatar } from '../common/UserAvatar';
 import { 
   DATA_URI_SISWA_PUTRA, 
@@ -168,6 +168,7 @@ export const AdminDashboard: React.FC = () => {
     nisn: string;
     noAbsen: string;
     gender: 'L' | 'P';
+    religion?: string;
     className: string;
     phone: string;
     parentName: string;
@@ -182,6 +183,7 @@ export const AdminDashboard: React.FC = () => {
     nisn: '',
     noAbsen: '',
     gender: 'L',
+    religion: 'Islam',
     className: '7A',
     phone: '',
     parentName: '',
@@ -596,6 +598,7 @@ export const AdminDashboard: React.FC = () => {
       nisn: '',
       noAbsen: '',
       gender: 'L',
+      religion: 'Islam',
       className: '7A',
       phone: '08123456789',
       parentName: '',
@@ -620,6 +623,7 @@ export const AdminDashboard: React.FC = () => {
       nisn: user.nis || user.nisn || '',
       noAbsen: user.attendanceNumber || user.noAbsen || '',
       gender: user.gender || 'L',
+      religion: user.religion || 'Islam',
       className: cleanClassName,
       phone: user.phone || '',
       parentName: linkedParent ? linkedParent.name.replace(/\s*\(Ortu.*\)/i, '') : '',
@@ -649,6 +653,7 @@ export const AdminDashboard: React.FC = () => {
         noAbsen: formData.noAbsen ? formData.noAbsen.trim() : undefined,
         className: formData.className,
         gender: formData.gender,
+        religion: formData.religion || 'Islam',
       };
 
       if (editUser.role === 'walikelas') {
@@ -714,6 +719,7 @@ export const AdminDashboard: React.FC = () => {
         attendanceNumber: cleanAbsen || undefined,
         noAbsen: cleanAbsen || undefined,
         className: formData.className,
+        religion: formData.religion || 'Islam',
         phone: formData.phone || '08123456789',
         parentId: parentUser.id,
         password: studentPassword,
@@ -1643,7 +1649,14 @@ export const AdminDashboard: React.FC = () => {
                             <div className="flex items-center gap-2.5">
                               <UserAvatar user={s} gender={s.gender} size="sm" className="w-8 h-8 rounded-lg" />
                               <div>
-                                <p className="font-bold text-slate-900 dark:text-white">{s.name}</p>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-bold text-slate-900 dark:text-white">{s.name}</p>
+                                  {s.religion && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                      {s.religion}
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold font-mono">
                                   NIS: {s.nis || s.nisn || '-'}
                                 </p>
@@ -2985,7 +2998,7 @@ export const AdminDashboard: React.FC = () => {
               {/* Siswa Fields */}
               {addRole === 'siswa' && (
                 <>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                     <div>
                       <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">NIS *</label>
                       <input
@@ -3015,6 +3028,18 @@ export const AdminDashboard: React.FC = () => {
                       >
                         <option value="L">Laki-laki (L)</option>
                         <option value="P">Perempuan (P)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Agama</label>
+                      <select
+                        value={formData.religion || 'Islam'}
+                        onChange={(e) => setFormData({ ...formData, religion: e.target.value })}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        {RELIGIONS_LIST.map((r) => (
+                          <option key={r.id} value={r.id}>{r.icon} {r.name}</option>
+                        ))}
                       </select>
                     </div>
                     <div>

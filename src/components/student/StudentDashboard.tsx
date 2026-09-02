@@ -32,7 +32,7 @@ import {
 } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
-import { HABIT_LIST, KATEGORI_CONFIG } from '../../lib/constants';
+import { HABIT_LIST, KATEGORI_CONFIG, RELIGIONS_LIST, getReligionConfig, ReligionType } from '../../lib/constants';
 import { HabitId, HabitItemData } from '../../types';
 import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
@@ -447,131 +447,177 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
 
                     {/* Subtasks Detail Inputs */}
                     <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-3 text-xs sm:text-sm">
-                      {/* Custom UI for Ibadah */}
-                      {habit.id === 'ibadah' && (
-                        <div className="space-y-3">
-                          <p className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
-                            Ibadah Wajib 5 Waktu
-                          </p>
-                          <div className="grid grid-cols-5 gap-1.5">
-                            {[
-                              { key: 'prayerFajr', label: 'Subuh' },
-                              { key: 'prayerDhuhr', label: 'Dzuhur' },
-                              { key: 'prayerAsr', label: 'Ashar' },
-                              { key: 'prayerMaghrib', label: 'Maghrib' },
-                              { key: 'prayerIsha', label: 'Isya' }
-                            ].map((p) => {
-                              const isChecked = !!itemData.values?.[p.key];
-                              return (
-                                <button
-                                  key={p.key}
-                                  type="button"
-                                  onClick={() => {
-                                    handleUpdateSubValue('ibadah', p.key, !isChecked);
-                                    if (!itemData.completed) handleToggleHabit('ibadah');
+                      {/* Custom UI for Ibadah (Multi-Religion Inclusive: Islam, Kristen, Katolik, Hindu, Buddha, Konghucu) */}
+                      {habit.id === 'ibadah' && (() => {
+                        const currentRel = (itemData.values?.religion || currentUser?.religion || 'Islam') as ReligionType;
+                        const relConfig = getReligionConfig(currentRel);
+
+                        return (
+                          <div className="space-y-3">
+                            {/* Pilihan Agama Siswa */}
+                            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <span>{relConfig.icon}</span>
+                                  <span>Pilihan Agama / Kepercayaan:</span>
+                                </span>
+                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                  {relConfig.name}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                                {RELIGIONS_LIST.map((rel) => {
+                                  const isSelected = currentRel === rel.id;
+                                  return (
+                                    <button
+                                      key={rel.id}
+                                      type="button"
+                                      onClick={() => {
+                                        handleUpdateSubValue('ibadah', 'religion', rel.id);
+                                      }}
+                                      className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 border ${
+                                        isSelected
+                                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white shadow-xs'
+                                          : 'bg-white dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                      }`}
+                                    >
+                                      <span>{rel.icon}</span>
+                                      <span className="truncate">{rel.name.split(' ')[0]}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Main Prayers Grid */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                  <span>{relConfig.icon}</span>
+                                  <span>{relConfig.mainTitle}</span>
+                                </p>
+                                <span className="text-[11px] text-slate-400">Pilih yang telah ditunaikan</span>
+                              </div>
+                              <div className={`grid gap-1.5 ${relConfig.mainPrayers.length === 5 ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'}`}>
+                                {relConfig.mainPrayers.map((p) => {
+                                  const isChecked = !!itemData.values?.[p.key];
+                                  return (
+                                    <button
+                                      key={p.key}
+                                      type="button"
+                                      onClick={() => {
+                                        handleUpdateSubValue('ibadah', p.key, !isChecked);
+                                        if (!itemData.completed) handleToggleHabit('ibadah');
+                                      }}
+                                      className={`py-2 px-2 rounded-xl text-xs sm:text-sm font-bold border transition-all text-center cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                                        isChecked
+                                          ? relConfig.activeBadge
+                                          : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                      }`}
+                                    >
+                                      <span className="truncate w-full">{isChecked ? '✓ ' : ''}{p.label}</span>
+                                      {p.timeHint && (
+                                        <span className={`text-[10px] font-normal ${isChecked ? 'text-white/80' : 'text-slate-400'}`}>
+                                          {p.timeHint}
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Ibadah Tambahan / Sunnah / Renungan / Trisandya */}
+                            <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={!!itemData.values?.sunnahWorship}
+                                  onChange={(e) => {
+                                    handleUpdateSubValue('ibadah', 'sunnahWorship', e.target.checked);
+                                    if (!itemData.completed && e.target.checked) handleToggleHabit('ibadah');
                                   }}
-                                  className={`py-2 px-1 rounded-lg text-xs sm:text-sm font-bold border transition-all text-center cursor-pointer ${
-                                    isChecked
-                                      ? 'bg-emerald-500 text-white border-emerald-600 shadow-xs'
-                                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-                                  }`}
-                                >
-                                  {isChecked ? '✓ ' : ''}{p.label}
-                                </button>
-                              );
-                            })}
-                          </div>
+                                  className="w-4 h-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                                />
+                                <span>✨ {relConfig.extraWorshipLabel}</span>
+                              </label>
+                              {itemData.values?.sunnahWorship && (
+                                <input
+                                  type="text"
+                                  placeholder={relConfig.extraWorshipPlaceholder}
+                                  value={itemData.values?.sunnahDetail || ''}
+                                  onChange={(e) => handleUpdateSubValue('ibadah', 'sunnahDetail', e.target.value)}
+                                  className="w-full px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
+                                />
+                              )}
+                            </div>
 
-                          {/* Puasa / Sholat Sunnah */}
-                          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
-                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
-                              <input
-                                type="checkbox"
-                                checked={!!itemData.values?.sunnahWorship}
-                                onChange={(e) => {
-                                  handleUpdateSubValue('ibadah', 'sunnahWorship', e.target.checked);
-                                  if (!itemData.completed && e.target.checked) handleToggleHabit('ibadah');
-                                }}
-                                className="w-4 h-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
-                              />
-                              <span>Puasa Sunnah / Sholat Sunnah (Tahajud / Dhuha / Rawatib)</span>
-                            </label>
-                            {itemData.values?.sunnahWorship && (
+                            {/* Baca Kitab Suci */}
+                            <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={!!itemData.values?.holyBookReading}
+                                  onChange={(e) => {
+                                    handleUpdateSubValue('ibadah', 'holyBookReading', e.target.checked);
+                                    if (!itemData.completed && e.target.checked) handleToggleHabit('ibadah');
+                                  }}
+                                  className="w-4 h-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                                />
+                                <span>📖 {relConfig.holyBookLabel}</span>
+                              </label>
+                              {itemData.values?.holyBookReading && (
+                                <input
+                                  type="text"
+                                  placeholder={relConfig.holyBookPlaceholder}
+                                  value={itemData.values?.holyBookDetail || ''}
+                                  onChange={(e) => handleUpdateSubValue('ibadah', 'holyBookDetail', e.target.value)}
+                                  className="w-full px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
+                                />
+                              )}
+                            </div>
+
+                            {/* Sedekah / Persembahan / Dana Punia / Kebaikan */}
+                            <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={!!itemData.values?.almsGiving}
+                                  onChange={(e) => {
+                                    handleUpdateSubValue('ibadah', 'almsGiving', e.target.checked);
+                                    if (!itemData.completed && e.target.checked) handleToggleHabit('ibadah');
+                                  }}
+                                  className="w-4 h-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                                />
+                                <span>🤲 {relConfig.almsLabel}</span>
+                              </label>
+                              {itemData.values?.almsGiving && (
+                                <input
+                                  type="text"
+                                  placeholder={relConfig.almsPlaceholder}
+                                  value={itemData.values?.almsDetail || ''}
+                                  onChange={(e) => handleUpdateSubValue('ibadah', 'almsDetail', e.target.value)}
+                                  className="w-full px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
+                                />
+                              )}
+                            </div>
+
+                            {/* Doa / Kebaikan Spiritual */}
+                            <div className="space-y-1">
+                              <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
+                                🙏 {relConfig.spiritualNoteLabel}
+                              </label>
                               <input
                                 type="text"
-                                placeholder="Contoh: Sholat Dhuha 4 Rakaat / Puasa Senin-Kamis"
-                                value={itemData.values?.sunnahDetail || ''}
-                                onChange={(e) => handleUpdateSubValue('ibadah', 'sunnahDetail', e.target.value)}
-                                className="w-full px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
+                                placeholder={relConfig.spiritualNotePlaceholder}
+                                value={itemData.values?.spiritualNote || ''}
+                                onChange={(e) => handleUpdateSubValue('ibadah', 'spiritualNote', e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500"
                               />
-                            )}
+                            </div>
                           </div>
-
-                          {/* Baca Kitab Suci */}
-                          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
-                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
-                              <input
-                                type="checkbox"
-                                checked={!!itemData.values?.holyBookReading}
-                                onChange={(e) => {
-                                  handleUpdateSubValue('ibadah', 'holyBookReading', e.target.checked);
-                                  if (!itemData.completed && e.target.checked) handleToggleHabit('ibadah');
-                                }}
-                                className="w-4 h-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
-                              />
-                              <span>Membaca Kitab Suci / Tadarus Al-Qur'an</span>
-                            </label>
-                            {itemData.values?.holyBookReading && (
-                              <input
-                                type="text"
-                                placeholder="Contoh: QS. Al-Kahfi Ayat 1-20 / Juz 1 Hlm 1-5"
-                                value={itemData.values?.holyBookDetail || ''}
-                                onChange={(e) => handleUpdateSubValue('ibadah', 'holyBookDetail', e.target.value)}
-                                className="w-full px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
-                              />
-                            )}
-                          </div>
-
-                          {/* Sedekah */}
-                          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
-                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
-                              <input
-                                type="checkbox"
-                                checked={!!itemData.values?.almsGiving}
-                                onChange={(e) => {
-                                  handleUpdateSubValue('ibadah', 'almsGiving', e.target.checked);
-                                  if (!itemData.completed && e.target.checked) handleToggleHabit('ibadah');
-                                }}
-                                className="w-4 h-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
-                              />
-                              <span>Sedekah / Infaq / Berbagi Kebaikan</span>
-                            </label>
-                            {itemData.values?.almsGiving && (
-                              <input
-                                type="text"
-                                placeholder="Contoh: Infaq kotak amal masjid & berbagi makanan"
-                                value={itemData.values?.almsDetail || ''}
-                                onChange={(e) => handleUpdateSubValue('ibadah', 'almsDetail', e.target.value)}
-                                className="w-full px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
-                              />
-                            )}
-                          </div>
-
-                          {/* Doa / Kebaikan Spiritual */}
-                          <div className="space-y-1">
-                            <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
-                              Doa / Kebaikan Spiritual Hari Ini
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="Tuliskan doa atau rasa syukurmu..."
-                              value={itemData.values?.spiritualNote || ''}
-                              onChange={(e) => handleUpdateSubValue('ibadah', 'spiritualNote', e.target.value)}
-                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500"
-                            />
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       {/* Custom UI for Makan Sehat (Sarapan, Makan Siang, Makan Malam + Menu Lain) */}
                       {habit.id === 'makan_sehat' && (

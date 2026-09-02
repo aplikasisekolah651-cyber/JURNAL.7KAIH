@@ -7,6 +7,197 @@ import {
   DATA_URI_ADMIN 
 } from './avatarHelper';
 
+export type ReligionType = 'Islam' | 'Kristen' | 'Katolik' | 'Hindu' | 'Buddha' | 'Konghucu';
+
+export interface ReligionPrayerItem {
+  key: string;
+  label: string;
+  shortLabel: string;
+  timeHint?: string;
+}
+
+export interface ReligionWorshipConfig {
+  id: ReligionType;
+  name: string;
+  shortName: string;
+  icon: string;
+  badge: string;
+  activeBadge: string;
+  mainTitle: string;
+  mainPrayers: ReligionPrayerItem[];
+  extraWorshipLabel: string;
+  extraWorshipPlaceholder: string;
+  holyBookLabel: string;
+  holyBookPlaceholder: string;
+  almsLabel: string;
+  almsPlaceholder: string;
+  spiritualNoteLabel: string;
+  spiritualNotePlaceholder: string;
+}
+
+export const RELIGIONS_LIST: { id: ReligionType; name: string; icon: string }[] = [
+  { id: 'Islam', name: 'Islam', icon: '🕌' },
+  { id: 'Kristen', name: 'Kristen (Protestan)', icon: '✝️' },
+  { id: 'Katolik', name: 'Katolik', icon: '⛪' },
+  { id: 'Hindu', name: 'Hindu', icon: '🕉️' },
+  { id: 'Buddha', name: 'Buddha', icon: '☸️' },
+  { id: 'Konghucu', name: 'Konghucu', icon: '☯️' }
+];
+
+export const RELIGION_WORSHIP_CONFIGS: Record<ReligionType, ReligionWorshipConfig> = {
+  Islam: {
+    id: 'Islam',
+    name: 'Islam',
+    shortName: 'Islam',
+    icon: '🕌',
+    badge: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800',
+    activeBadge: 'bg-emerald-600 text-white border-emerald-600 shadow-xs',
+    mainTitle: 'Ibadah Sholat Wajib 5 Waktu',
+    mainPrayers: [
+      { key: 'prayerFajr', label: 'Subuh', shortLabel: 'Subuh', timeHint: '04:30' },
+      { key: 'prayerDhuhr', label: 'Dzuhur', shortLabel: 'Dzuhur', timeHint: '12:00' },
+      { key: 'prayerAsr', label: 'Ashar', shortLabel: 'Ashar', timeHint: '15:15' },
+      { key: 'prayerMaghrib', label: 'Maghrib', shortLabel: 'Maghrib', timeHint: '17:50' },
+      { key: 'prayerIsha', label: 'Isya', shortLabel: 'Isya', timeHint: '19:00' }
+    ],
+    extraWorshipLabel: 'Puasa Sunnah / Sholat Sunnah (Tahajud / Dhuha / Rawatib)',
+    extraWorshipPlaceholder: 'Contoh: Sholat Dhuha 4 Rakaat / Puasa Senin-Kamis',
+    holyBookLabel: 'Membaca Kitab Suci Al-Qur\'an / Tadarus',
+    holyBookPlaceholder: 'Contoh: QS. Al-Kahfi Ayat 1-20 / Juz 1 Hlm 1-5',
+    almsLabel: 'Sedekah / Infaq / Berbagi Kebaikan',
+    almsPlaceholder: 'Contoh: Infaq kotak amal masjid & berbagi makanan',
+    spiritualNoteLabel: 'Doa / Dzikir & Rasa Syukur Hari Ini',
+    spiritualNotePlaceholder: 'Tuliskan doa atau rasa syukurmu...'
+  },
+  Kristen: {
+    id: 'Kristen',
+    name: 'Kristen (Protestan)',
+    shortName: 'Kristen',
+    icon: '✝️',
+    badge: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800',
+    activeBadge: 'bg-blue-600 text-white border-blue-600 shadow-xs',
+    mainTitle: 'Doa & Ibadah Harian',
+    mainPrayers: [
+      { key: 'prayerMorning', label: 'Doa Pagi / Saat Teduh', shortLabel: 'Saat Teduh', timeHint: 'Pagi' },
+      { key: 'prayerNoon', label: 'Doa Makan & Siang', shortLabel: 'Doa Siang', timeHint: 'Siang' },
+      { key: 'prayerNight', label: 'Doa Malam / Sebelum Tidur', shortLabel: 'Doa Malam', timeHint: 'Malam' },
+      { key: 'sundayService', label: 'Ibadah Minggu / Sekolah Minggu / Komisi Remaja', shortLabel: 'Ibadah Minggu', timeHint: 'Ibadah' }
+    ],
+    extraWorshipLabel: 'Renungan Harian / Pelayanan / Puasa Kristen',
+    extraWorshipPlaceholder: 'Contoh: Membaca Renungan Santapan Harian / Pelayanan Musik Gereja',
+    holyBookLabel: 'Membaca & Merenungkan Alkitab',
+    holyBookPlaceholder: 'Contoh: Mazmur 23:1-6 / Yohanes 3:16-17 / Amsal 3:5-6',
+    almsLabel: 'Persembahan Kasih / Diakonia / Berbagi Sesama',
+    almsPlaceholder: 'Contoh: Persembahan syukur ibadah & berbagi bekal dengan teman',
+    spiritualNoteLabel: 'Doa Syafaat & Ungkapan Syukur Hari Ini',
+    spiritualNotePlaceholder: 'Tuliskan pokok doa syafaat atau rasa syukurmu...'
+  },
+  Katolik: {
+    id: 'Katolik',
+    name: 'Katolik',
+    shortName: 'Katolik',
+    icon: '⛪',
+    badge: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800',
+    activeBadge: 'bg-indigo-600 text-white border-indigo-600 shadow-xs',
+    mainTitle: 'Doa Liturgi & Ibadah Harian',
+    mainPrayers: [
+      { key: 'prayerAngelus', label: 'Doa Angelus / Malaikat Tuhan (Pagi/Siang/Sore)', shortLabel: 'Doa Angelus', timeHint: 'Angelus' },
+      { key: 'prayerRosary', label: 'Doa Rosario / Kerahiman Ilahi', shortLabel: 'Doa Rosario', timeHint: 'Rosario' },
+      { key: 'prayerNight', label: 'Doa Malam / Pemeriksaan Batin (Examen)', shortLabel: 'Doa Malam', timeHint: 'Malam' },
+      { key: 'holyMass', label: 'Perayaan Ekaristi / Misa Kudus', shortLabel: 'Misa Kudus', timeHint: 'Misa' }
+    ],
+    extraWorshipLabel: 'Devosi / Novena / Pantang & Puasa',
+    extraWorshipPlaceholder: 'Contoh: Doa Rosario 1 Peristiwa / Novena Tiga Salam Maria',
+    holyBookLabel: 'Membaca Kitab Suci Alkitab Katolik (Deuterokanonika)',
+    holyBookPlaceholder: 'Contoh: Injil Hari Ini (Matius 5:1-12) / Mazmur Tanggapan',
+    almsLabel: 'Kolekte / Aksi Puasa Pembangunan (APP) / Aksi Kasih',
+    almsPlaceholder: 'Contoh: Kolekte perayaan ekaristi & kotak aksi kasih',
+    spiritualNoteLabel: 'Refleksi Rohani & Doa Syukur Hari Ini',
+    spiritualNotePlaceholder: 'Tuliskan refleksi firman Tuhan atau ungkapan syukurmu...'
+  },
+  Hindu: {
+    id: 'Hindu',
+    name: 'Hindu',
+    shortName: 'Hindu',
+    icon: '🕉️',
+    badge: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/50 dark:text-orange-300 dark:border-orange-800',
+    activeBadge: 'bg-orange-600 text-white border-orange-600 shadow-xs',
+    mainTitle: 'Puja Trisandya & Kramaning Sembah',
+    mainPrayers: [
+      { key: 'trisandyaMorning', label: 'Trisandya Pagi (Brahma Muhurta - 06:00)', shortLabel: 'Trisandya Pagi', timeHint: '06:00' },
+      { key: 'trisandyaNoon', label: 'Trisandya Siang (Madhyama Sandhya - 12:00)', shortLabel: 'Trisandya Siang', timeHint: '12:00' },
+      { key: 'trisandyaEvening', label: 'Trisandya Sore (Sayam Sandhya - 18:00)', shortLabel: 'Trisandya Sore', timeHint: '18:00' },
+      { key: 'pancaSembahyang', label: 'Panca Sembahyang (Kramaning Sembah)', shortLabel: 'Panca Sembahyang', timeHint: 'Sembahyang' }
+    ],
+    extraWorshipLabel: 'Menghaturkan Canang Sari / Upawasa / Purnama / Tilem',
+    extraWorshipPlaceholder: 'Contoh: Menghaturkan Canang Sari di Pelangkiran/Merajan / Upawasa',
+    holyBookLabel: 'Membaca & Melantunkan Sloka Bhagawad Gita / Weda',
+    holyBookPlaceholder: 'Contoh: Bhagawad Gita Bab 2 Sloka 47 / Sarasamuccaya Sloka 1',
+    almsLabel: 'Dana Punia / Tat Twam Asi (Tolong Menolong)',
+    almsPlaceholder: 'Contoh: Menghaturkan Dana Punia & berbuat kebajikan pada sesama',
+    spiritualNoteLabel: 'Pengucapan Gayatri Mantram & Doa Syukur Hari Ini',
+    spiritualNotePlaceholder: 'Tuliskan bait mantram atau rasa syukurmu...'
+  },
+  Buddha: {
+    id: 'Buddha',
+    name: 'Buddha',
+    shortName: 'Buddha',
+    icon: '☸️',
+    badge: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800',
+    activeBadge: 'bg-amber-600 text-white border-amber-600 shadow-xs',
+    mainTitle: 'Puja Bakti & Meditasi Harian',
+    mainPrayers: [
+      { key: 'pujaMorning', label: 'Puja Bakti Pagi', shortLabel: 'Puja Pagi', timeHint: 'Pagi' },
+      { key: 'pujaEvening', label: 'Puja Bakti Malam', shortLabel: 'Puja Malam', timeHint: 'Malam' },
+      { key: 'meditation', label: 'Meditasi (Samatha / Bhavana)', shortLabel: 'Meditasi', timeHint: 'Meditasi' },
+      { key: 'sundayPuja', label: 'Kebaktian Minggu di Vihara', shortLabel: 'Kebaktian', timeHint: 'Vihara' }
+    ],
+    extraWorshipLabel: 'Melatih Sila (Pancasila Buddhis) / Uposatha',
+    extraWorshipPlaceholder: 'Contoh: Meditasi pernapasan 15 menit & melatih cinta kasih (Metta)',
+    holyBookLabel: 'Membaca Kitab Suci Dhammapada / Paritta',
+    holyBookPlaceholder: 'Contoh: Dhammapada Yamakavagga bait 1-5 / Mangala Sutta',
+    almsLabel: 'Berdana (Dana Paramita) / Menolong Sesama',
+    almsPlaceholder: 'Contoh: Berdana makanan/kebutuhan kepada sesama & Sangha',
+    spiritualNoteLabel: 'Refleksi Dharma, Metta & Doa Kebajikan',
+    spiritualNotePlaceholder: 'Tuliskan refleksi batin atau doa cinta kasih...'
+  },
+  Konghucu: {
+    id: 'Konghucu',
+    name: 'Konghucu',
+    shortName: 'Konghucu',
+    icon: '☯️',
+    badge: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/50 dark:text-red-300 dark:border-red-800',
+    activeBadge: 'bg-red-600 text-white border-red-600 shadow-xs',
+    mainTitle: 'Sembahyang Tian & Kebajikan',
+    mainPrayers: [
+      { key: 'sembahyangTianPagi', label: 'Sembahyang Pagi (Jing Tian)', shortLabel: 'Sembahyang Pagi', timeHint: 'Pagi' },
+      { key: 'sembahyangTianSore', label: 'Sembahyang Sore (Shen Tian)', shortLabel: 'Sembahyang Sore', timeHint: 'Sore' },
+      { key: 'penghormatanLeluhur', label: 'Penghormatan Leluhur (Xiao)', shortLabel: 'Hormat Leluhur', timeHint: 'Leluhur' },
+      { key: 'ibadahLitang', label: 'Kebaktian di Lithang / Kelenteng', shortLabel: 'Kebaktian', timeHint: 'Kelenteng' }
+    ],
+    extraWorshipLabel: 'Melatih Delapan Kebajikan (Ba De) / Ren',
+    extraWorshipPlaceholder: 'Contoh: Melatih sikap bakti kepada orang tua (Xiao) & ketulusan (Zhong)',
+    holyBookLabel: 'Membaca Kitab Suci Si Shu & Wu Jing',
+    holyBookPlaceholder: 'Contoh: Kitab Lun Yu (Sabda Suci) Bab 1',
+    almsLabel: 'Berbuat Kebajikan / Amal Kasih',
+    almsPlaceholder: 'Contoh: Beramal untuk fakir miskin & berbagi kebaikan',
+    spiritualNoteLabel: 'Renungan Firman Tian & Refleksi Batin',
+    spiritualNotePlaceholder: 'Tuliskan renungan firman Tian atau tekad kebajikan...'
+  }
+};
+
+export const getReligionConfig = (religionName?: string): ReligionWorshipConfig => {
+  if (!religionName) return RELIGION_WORSHIP_CONFIGS.Islam;
+  const clean = religionName.trim().toLowerCase();
+  if (clean.includes('kristen') || clean.includes('protestan')) return RELIGION_WORSHIP_CONFIGS.Kristen;
+  if (clean.includes('katolik')) return RELIGION_WORSHIP_CONFIGS.Katolik;
+  if (clean.includes('hindu')) return RELIGION_WORSHIP_CONFIGS.Hindu;
+  if (clean.includes('buddha') || clean.includes('budha')) return RELIGION_WORSHIP_CONFIGS.Buddha;
+  if (clean.includes('konghucu') || clean.includes('khonghucu')) return RELIGION_WORSHIP_CONFIGS.Konghucu;
+  return RELIGION_WORSHIP_CONFIGS.Islam;
+};
+
+
 export const HABIT_DEFINITIONS: Record<HabitId, HabitDefinition> = {
   bangun_pagi: {
     id: 'bangun_pagi',

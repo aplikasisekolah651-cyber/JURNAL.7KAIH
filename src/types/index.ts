@@ -13,6 +13,7 @@ export interface User {
   nisn?: string; // Fallback / legacy alias
   attendanceNumber?: string; // Nomor Absen Siswa
   noAbsen?: string; // Alias Nomor Absen
+  religion?: 'Islam' | 'Kristen' | 'Katolik' | 'Hindu' | 'Buddha' | 'Konghucu' | string; // Agama siswa
   classId?: string;
   className?: string;
   parentId?: string; // If siswa, links to Orang Tua

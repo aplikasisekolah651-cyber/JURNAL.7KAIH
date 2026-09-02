@@ -50,7 +50,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
-import { HABIT_LIST, KATEGORI_CONFIG } from '../../lib/constants';
+import { HABIT_LIST, KATEGORI_CONFIG, getReligionConfig, ReligionType } from '../../lib/constants';
 import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
 import { PDFReportGenerator } from '../../lib/pdfGenerator';
@@ -564,61 +564,65 @@ export const ParentDashboard: React.FC = () => {
                           </div>
                         )}
 
-                        {/* 2. Beribadah */}
-                        {habit.id === 'ibadah' && (
-                          <div className="space-y-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
-                            <div>
-                              <span className="text-slate-400 block text-xs font-medium mb-1.5">🕌 Sholat 5 Waktu:</span>
-                              <div className="flex flex-wrap gap-1.5">
-                                {[
-                                  { key: 'prayerFajr', label: 'Subuh' },
-                                  { key: 'prayerDhuhr', label: 'Dzuhur' },
-                                  { key: 'prayerAsr', label: 'Ashar' },
-                                  { key: 'prayerMaghrib', label: 'Maghrib' },
-                                  { key: 'prayerIsha', label: 'Isya' }
-                                ].map(p => (
-                                  <span 
-                                    key={p.key} 
-                                    className={`px-3 py-1 rounded-lg text-xs sm:text-sm font-bold ${
-                                      vals[p.key] 
-                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
-                                        : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
-                                    }`}
-                                  >
-                                    {vals[p.key] ? '✓ ' : ''}{p.label}
+                        {/* 2. Beribadah (Inklusif Multi-Agama) */}
+                        {habit.id === 'ibadah' && (() => {
+                          const studentRel = (vals.religion || currentStudent?.religion || 'Islam') as ReligionType;
+                          const relConfig = getReligionConfig(studentRel);
+
+                          return (
+                            <div className="space-y-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
+                              <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="text-slate-500 dark:text-slate-400 block text-xs font-semibold flex items-center gap-1">
+                                    <span>{relConfig.icon}</span>
+                                    <span>{relConfig.mainTitle} ({relConfig.name}):</span>
                                   </span>
-                                ))}
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {relConfig.mainPrayers.map(p => (
+                                    <span 
+                                      key={p.key} 
+                                      className={`px-3 py-1 rounded-lg text-xs sm:text-sm font-bold ${
+                                        vals[p.key] 
+                                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+                                          : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
+                                      }`}
+                                    >
+                                      {vals[p.key] ? '✓ ' : ''}{p.label}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-200/70 dark:border-slate-700/60">
-                              <div>
-                                <span className="text-slate-400 block text-xs font-medium">🌙 Puasa / Sholat Sunnah:</span>
-                                <span className="font-bold text-slate-800 dark:text-slate-100">
-                                  {vals.sunnahWorship ? (vals.sunnahDetail || 'Dilaksanakan') : 'Tidak ada'}
-                                </span>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-200/70 dark:border-slate-700/60">
+                                <div>
+                                  <span className="text-slate-400 block text-xs font-medium">✨ {relConfig.extraWorshipLabel.split('/')[0]}:</span>
+                                  <span className="font-bold text-slate-800 dark:text-slate-100">
+                                    {vals.sunnahWorship ? (vals.sunnahDetail || 'Dilaksanakan') : 'Tidak ada'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-xs font-medium">📖 {relConfig.holyBookLabel.split('/')[0]}:</span>
+                                  <span className="font-bold text-slate-800 dark:text-slate-100">
+                                    {vals.holyBookReading ? (vals.holyBookDetail || 'Dibaca') : 'Tidak ada'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-xs font-medium">🤲 {relConfig.almsLabel.split('/')[0]}:</span>
+                                  <span className="font-bold text-slate-800 dark:text-slate-100">
+                                    {vals.almsGiving ? (vals.almsDetail || 'Berbagi/Berdana') : 'Tidak ada'}
+                                  </span>
+                                </div>
                               </div>
-                              <div>
-                                <span className="text-slate-400 block text-xs font-medium">📖 Baca Kitab Suci / Tadarus:</span>
-                                <span className="font-bold text-slate-800 dark:text-slate-100">
-                                  {vals.holyBookReading ? (vals.holyBookDetail || 'Dibaca') : 'Tidak ada'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400 block text-xs font-medium">🤲 Sedekah / Berbagi:</span>
-                                <span className="font-bold text-slate-800 dark:text-slate-100">
-                                  {vals.almsGiving ? (vals.almsDetail || 'Bersedekah') : 'Tidak ada'}
-                                </span>
-                              </div>
-                            </div>
 
-                            {vals.spiritualNote && (
-                              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 italic pt-1">
-                                "Doa / Syukur: {vals.spiritualNote}"
-                              </p>
-                            )}
-                          </div>
-                        )}
+                              {vals.spiritualNote && (
+                                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 italic pt-1">
+                                  "Doa/Refleksi: {vals.spiritualNote}"
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* 3. Berolahraga */}
                         {habit.id === 'olahraga' && (
