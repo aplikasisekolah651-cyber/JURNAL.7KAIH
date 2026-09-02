@@ -8,6 +8,7 @@ export interface User {
   gender?: 'L' | 'P'; // Jenis Kelamin: L = Laki-laki, P = Perempuan
   avatar?: string;
   phone?: string;
+  nip?: string; // Nomor Induk Pegawai (NIP) untuk Wali Kelas / Guru / Kepala Sekolah
   nis?: string; // Nomor Induk Siswa (NIS)
   nisn?: string; // Fallback / legacy alias
   attendanceNumber?: string; // Nomor Absen Siswa
@@ -139,6 +140,7 @@ export interface JournalEntry {
     reviewedAt?: number;
     teacherId?: string;
     teacherName?: string;
+    teacherNip?: string;
     notes?: string;
     recommendation?: string;
     badgeAwarded?: string;
@@ -171,6 +173,7 @@ export interface SchoolClass {
   academicYear: string;
   teacherId: string;
   teacherName: string;
+  teacherNip?: string;
   studentCount: number;
 }
 

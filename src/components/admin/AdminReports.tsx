@@ -124,6 +124,13 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
   // Export Individual Student PDF
   const handlePrintIndividualPDF = (targetStudent: User) => {
     const sJournals = getStudentJournals(targetStudent.id);
+    const studentTeacher = teachers.find(t => {
+      if (!targetStudent.className) return false;
+      const cleanStudentClass = targetStudent.className.replace(/\s+/g, '').toLowerCase();
+      const cleanTeacherClass = (t.className || '').replace(/\s+/g, '').toLowerCase();
+      return cleanTeacherClass.includes(cleanStudentClass) || t.assignedClassIds?.includes(targetStudent.classId || '');
+    });
+
     setIsExporting(true);
     try {
       PDFReportGenerator.generateStudentReport(
@@ -131,7 +138,8 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
         sJournals,
         selectedMonth,
         customTeacherNote || undefined,
-        schoolSettings
+        schoolSettings,
+        studentTeacher ? { name: studentTeacher.name, nip: studentTeacher.nip } : undefined
       );
       audioNotifier.playSuccessChime();
     } catch (err) {
@@ -187,7 +195,13 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
     const targetStudents = students.filter(s => s.className === targetClass);
     const targetStudentIds = targetStudents.map(s => s.id);
     const targetAnalysis = getClassAnalysis(targetClass, targetStudentIds);
-    const targetTeacher = teachers.find(t => t.className?.includes(targetClass))?.name || `Wali Kelas ${targetClass}`;
+    const targetTeacherObj = teachers.find(t => {
+      const cleanTargetClass = targetClass.replace(/\s+/g, '').toLowerCase();
+      const cleanTeacherClass = (t.className || '').replace(/\s+/g, '').toLowerCase();
+      return cleanTeacherClass.includes(cleanTargetClass);
+    });
+    const targetTeacher = targetTeacherObj?.name || `Wali Kelas ${targetClass}`;
+    const targetTeacherNip = targetTeacherObj?.nip;
 
     const targetRows = targetStudents.map(student => {
       const sJournals = getStudentJournals(student.id);
@@ -220,7 +234,8 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
         selectedMonth,
         targetAnalysis,
         targetRows,
-        schoolSettings
+        schoolSettings,
+        targetTeacherNip
       );
       audioNotifier.playSuccessChime();
     } catch (err) {

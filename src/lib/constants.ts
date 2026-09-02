@@ -206,6 +206,7 @@ export const DEMO_CLASSES: SchoolClass[] = [
     academicYear: '2025/2026',
     teacherId: 'usr-walikelas-1',
     teacherName: 'Ibu Siti Rahmawati, S.Pd.',
+    teacherNip: '19850314 200801 2 007',
     studentCount: 32
   },
   {
@@ -214,6 +215,7 @@ export const DEMO_CLASSES: SchoolClass[] = [
     academicYear: '2025/2026',
     teacherId: 'usr-walikelas-2',
     teacherName: 'Bpk. Budi Santoso, M.Pd.',
+    teacherNip: '19820719 200604 1 005',
     studentCount: 30
   },
   {
@@ -222,6 +224,7 @@ export const DEMO_CLASSES: SchoolClass[] = [
     academicYear: '2025/2026',
     teacherId: 'usr-walikelas-1',
     teacherName: 'Ibu Siti Rahmawati, S.Pd.',
+    teacherNip: '19850314 200801 2 007',
     studentCount: 28
   }
 ];
@@ -354,11 +357,26 @@ export const DEMO_USERS: User[] = [
   {
     id: 'usr-walikelas-1',
     name: 'Ibu Siti Rahmawati, S.Pd.',
+    nip: '19850314 200801 2 007',
     email: 'wali.7a',
     role: 'walikelas',
     assignedClassIds: ['class-7a', 'class-8a'],
     className: '7A (Wali Kelas)',
     phone: '081122334455',
+    avatar: DATA_URI_WALI_KELAS,
+    password: 'wali123#Secure',
+    schoolName: 'SMP Negeri 2 Kasihan',
+    createdAt: '2025-07-15T08:00:00.000Z'
+  },
+  {
+    id: 'usr-walikelas-2',
+    name: 'Bpk. Budi Santoso, M.Pd.',
+    nip: '19820719 200604 1 005',
+    email: 'wali.7b',
+    role: 'walikelas',
+    assignedClassIds: ['class-7b'],
+    className: '7B (Wali Kelas)',
+    phone: '081122334456',
     avatar: DATA_URI_WALI_KELAS,
     password: 'wali123#Secure',
     schoolName: 'SMP Negeri 2 Kasihan',

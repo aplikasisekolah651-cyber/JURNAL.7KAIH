@@ -164,6 +164,7 @@ export const AdminDashboard: React.FC = () => {
   const [formData, setFormData] = useState<{
     name: string;
     email: string;
+    nip: string;
     nisn: string;
     noAbsen: string;
     gender: 'L' | 'P';
@@ -177,6 +178,7 @@ export const AdminDashboard: React.FC = () => {
   }>({
     name: '',
     email: '',
+    nip: '',
     nisn: '',
     noAbsen: '',
     gender: 'L',
@@ -590,6 +592,7 @@ export const AdminDashboard: React.FC = () => {
     setFormData({
       name: '',
       email: '',
+      nip: '',
       nisn: '',
       noAbsen: '',
       gender: 'L',
@@ -613,6 +616,7 @@ export const AdminDashboard: React.FC = () => {
     setFormData({
       name: user.name,
       email: user.email,
+      nip: user.nip || '',
       nisn: user.nis || user.nisn || '',
       noAbsen: user.attendanceNumber || user.noAbsen || '',
       gender: user.gender || 'L',
@@ -638,6 +642,7 @@ export const AdminDashboard: React.FC = () => {
         name: formData.name.trim(),
         email: formData.email.trim(),
         phone: formData.phone.trim(),
+        nip: formData.nip ? formData.nip.trim() : undefined,
         nis: formData.nisn ? formData.nisn.trim() : undefined,
         nisn: formData.nisn ? formData.nisn.trim() : undefined,
         attendanceNumber: formData.noAbsen ? formData.noAbsen.trim() : undefined,
@@ -749,6 +754,7 @@ export const AdminDashboard: React.FC = () => {
       const waliPassword = formData.customPassword?.trim() || 'wali123#Secure';
       newUser = await addUser({
         name: formData.name.trim(),
+        nip: formData.nip?.trim() || undefined,
         email: teacherIdentifier,
         role: 'walikelas',
         className: `${formData.assignedClass} (Wali Kelas)`,
@@ -2140,9 +2146,16 @@ export const AdminDashboard: React.FC = () => {
                         <UserAvatar user={t} size="md" className="w-11 h-11 rounded-xl" />
                         <div>
                           <h4 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">{t.name}</h4>
-                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 mt-0.5">
-                            {t.className || 'Wali Kelas'}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                              {t.className || 'Wali Kelas'}
+                            </span>
+                            {t.nip && (
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                NIP. {t.nip}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -2150,26 +2163,32 @@ export const AdminDashboard: React.FC = () => {
                         <button
                           onClick={() => handleOpenEditModal(t)}
                           className="p-1 text-slate-500 hover:text-emerald-600 rounded hover:bg-slate-200"
+                          title="Edit Data Guru & NIP"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => setDeleteModal({ open: true, user: t })}
                           className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50"
+                          title="Hapus Akun"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                    <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
                       <div>
-                        <span className="text-[10px] text-slate-400">Username / Email:</span>
+                        <span className="text-[10px] text-slate-400">NIP:</span>
+                        <p className="font-mono text-slate-700 dark:text-slate-300 text-[11px] truncate font-semibold">{t.nip || '-'}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400">Username:</span>
                         <p className="font-mono text-slate-700 dark:text-slate-300 text-[11px] truncate">{t.email}</p>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400">No. WhatsApp / HP:</span>
-                        <p className="font-mono text-slate-700 dark:text-slate-300 text-[11px]">{t.phone || '-'}</p>
+                        <span className="text-[10px] text-slate-400">WhatsApp:</span>
+                        <p className="font-mono text-slate-700 dark:text-slate-300 text-[11px] truncate">{t.phone || '-'}</p>
                       </div>
                     </div>
 
@@ -3047,17 +3066,39 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Wali Kelas Fields */}
               {addRole === 'walikelas' && (
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Kelas Bimbingan yang Diampu *</label>
-                  <select
-                    value={formData.assignedClass}
-                    onChange={(e) => setFormData({ ...formData, assignedClass: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-purple-500"
-                  >
-                    {availableClasses.map(cls => (
-                      <option key={cls} value={cls}>Kelas {cls}</option>
-                    ))}
-                  </select>
+                <div className="space-y-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                        NIP (Nomor Induk Pegawai)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: 19850314 200801 2 007"
+                        value={formData.nip}
+                        onChange={(e) => setFormData({ ...formData, nip: e.target.value })}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-purple-500 font-mono text-xs"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        * NIP dicetak pada tanda tangan Laporan PDF 7 KAIH
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                        Kelas Bimbingan yang Diampu *
+                      </label>
+                      <select
+                        value={formData.assignedClass}
+                        onChange={(e) => setFormData({ ...formData, assignedClass: e.target.value })}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        {availableClasses.map(cls => (
+                          <option key={cls} value={cls}>Kelas {cls}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 </div>
               )}
 

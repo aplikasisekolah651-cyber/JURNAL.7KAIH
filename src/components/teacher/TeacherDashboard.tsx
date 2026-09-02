@@ -18,7 +18,13 @@ import {
   Sparkles,
   ShieldCheck,
   Send,
-  X
+  X,
+  MessageCircle,
+  Smartphone,
+  Share2,
+  AlertCircle,
+  Clock,
+  Check
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -36,13 +42,14 @@ import {
 } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
-import { DEMO_CLASSES, HABIT_LIST, KATEGORI_CONFIG } from '../../lib/constants';
+import { DEMO_CLASSES, HABIT_LIST, KATEGORI_CONFIG, SCHOOL_CONFIG } from '../../lib/constants';
 import { HabitId, HabitKategoriLevel, User, JournalEntry } from '../../types';
 import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
 import { PDFReportGenerator } from '../../lib/pdfGenerator';
 import { audioNotifier } from '../../lib/audioNotifier';
 import { UserAvatar } from '../common/UserAvatar';
+import { ParentWAReminderModal } from './ParentWAReminderModal';
 
 export const TeacherDashboard: React.FC = () => {
   const { currentUser, allUsers } = useAuth();
@@ -113,6 +120,10 @@ export const TeacherDashboard: React.FC = () => {
   const [awardedBadge, setAwardedBadge] = useState('Bintang 7 KAIH Teladan');
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
+  // WhatsApp Reminder Modal State
+  const [isWAReminderOpen, setIsWAReminderOpen] = useState(false);
+  const [waSelectedStudent, setWaSelectedStudent] = useState<User | null>(null);
+
   const selectedClassObj = availableClasses.find(c => c.id === selectedClassId) || availableClasses[0];
   const selectedClassName = selectedClassObj?.rawName || '7A';
 
@@ -126,7 +137,7 @@ export const TeacherDashboard: React.FC = () => {
   // Classroom Analysis Summary
   const classAnalysis = getClassAnalysis(selectedClassId, classStudentIds);
 
-  // Prepare table data for students
+  // Prepare table data for students with parent confirmation state
   const studentRows = classStudents.map(student => {
     const sJournals = getStudentJournals(student.id);
     const totalCount = sJournals.length;
@@ -138,18 +149,35 @@ export const TeacherDashboard: React.FC = () => {
     if (avgScore >= 80) level = 'sudah_terbiasa';
     else if (avgScore >= 50) level = 'mulai_terbiasa';
 
-    const validatedCount = sJournals.filter(j => j.status === 'validated').length;
+    const validatedCount = sJournals.filter(j => j.status === 'validated' || j.parentValidation?.validated).length;
     const validationRate = totalCount > 0 ? Math.round((validatedCount / totalCount) * 100) : 0;
+
+    // Check if latest journal is unconfirmed by parent
+    const latestJournal = sJournals[0];
+    const isPendingParentValidation = !!latestJournal && (!latestJournal.parentValidation?.validated || latestJournal.status !== 'validated');
+
+    // Find linked parent
+    const parent = allUsers.find(u => 
+      u.role === 'orangtua' && (u.studentIds?.includes(student.id) || u.id === student.parentId)
+    );
 
     return {
       student,
+      parent,
       score: avgScore,
       level,
       entriesCount: totalCount,
       validationRate,
-      journals: sJournals
+      journals: sJournals,
+      latestJournal,
+      isPendingParentValidation
     };
   });
+
+  // Students whose parents haven't confirmed yet
+  const pendingParentStudents = useMemo(() => {
+    return studentRows.filter(r => r.isPendingParentValidation);
+  }, [studentRows]);
 
   // Filter student rows
   const filteredRows = studentRows.filter(row => {
@@ -157,6 +185,10 @@ export const TeacherDashboard: React.FC = () => {
                           (row.student.nis && row.student.nis.includes(searchQuery)) ||
                           (row.student.nisn && row.student.nisn.includes(searchQuery)) ||
                           (row.student.attendanceNumber && row.student.attendanceNumber.includes(searchQuery));
+    
+    if (filterCategory === 'belum_validasi_ortu') {
+      return matchesSearch && row.isPendingParentValidation;
+    }
     const matchesCategory = filterCategory === 'all' || row.level === filterCategory;
     return matchesSearch && matchesCategory;
   });
@@ -221,6 +253,11 @@ export const TeacherDashboard: React.FC = () => {
     } finally {
       setIsSubmittingFeedback(false);
     }
+  };
+
+  const handleOpenWAReminderForStudent = (student: User) => {
+    setWaSelectedStudent(student);
+    setIsWAReminderOpen(true);
   };
 
   return (
@@ -317,6 +354,65 @@ export const TeacherDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* SOP & PENGINGAT ORANG TUA VIA WHATSAPP BANNER */}
+      <div className="bg-gradient-to-r from-emerald-900/90 via-slate-900 to-teal-950 border border-emerald-500/30 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden">
+        <div className="absolute right-0 top-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="space-y-1.5 max-w-2xl">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
+                <Smartphone className="w-3 h-3" />
+                SOP Pengingat Orang Tua via WA
+              </span>
+              <span className="text-[11px] text-emerald-200/80">
+                Waktu Terbaik: 19.30 - 21.00 WIB
+              </span>
+            </div>
+
+            <h3 className="text-base sm:text-lg font-bold text-white">
+              {pendingParentStudents.length > 0 ? (
+                <>Terdapat <span className="text-amber-300 font-extrabold">{pendingParentStudents.length} Siswa</span> Belum Dikonfirmasi Orang Tua</>
+              ) : (
+                <>Semua Jurnal Siswa Telah Dikonfirmasi Orang Tua 🎉</>
+              )}
+            </h3>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Jalankan SOP resmi SMP Negeri 2 Kasihan untuk mengingatkan orang tua memvalidasi jurnal harian ananda melalui pesan WhatsApp santun, template personal otomatis, atau rekap grup paguyuban kelas.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              id="btn-open-wa-reminder-modal"
+              onClick={() => {
+                setWaSelectedStudent(pendingParentStudents[0]?.student || classStudents[0] || null);
+                setIsWAReminderOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all active:scale-98"
+            >
+              <MessageCircle className="w-4 h-4 fill-slate-950" />
+              <span>Ingatkan via WA (SOP Resmi)</span>
+              {pendingParentStudents.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-slate-900 text-emerald-300 text-[10px] font-extrabold">
+                  {pendingParentStudents.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                setFilterCategory('belum_validasi_ortu');
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs border border-white/15 transition-all"
+            >
+              Filter Siswa Belum Validasi
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Visual Analytics Bento Grid: Class Radar & Class Bar Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Radar Chart: 7 Habit Performance */}
@@ -408,8 +504,8 @@ export const TeacherDashboard: React.FC = () => {
               />
             </div>
 
-            {/* Category Filter */}
-            <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
+            {/* Category & Status Filter */}
+            <div className="flex flex-wrap items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
               <button
                 onClick={() => setFilterCategory('all')}
                 className={`px-2 py-0.5 text-xs font-semibold rounded-md transition-all ${
@@ -417,6 +513,17 @@ export const TeacherDashboard: React.FC = () => {
                 }`}
               >
                 Semua
+              </button>
+              <button
+                onClick={() => setFilterCategory('belum_validasi_ortu')}
+                className={`px-2 py-0.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${
+                  filterCategory === 'belum_validasi_ortu' 
+                    ? 'bg-rose-600 text-white shadow-xs' 
+                    : 'text-rose-600 dark:text-rose-400 hover:bg-rose-50'
+                }`}
+              >
+                <MessageCircle className="w-3 h-3" />
+                <span>Belum Validasi Ortu ({pendingParentStudents.length})</span>
               </button>
               <button
                 onClick={() => setFilterCategory('sudah_terbiasa')}
@@ -457,8 +564,8 @@ export const TeacherDashboard: React.FC = () => {
                 <th className="p-2.5 text-center">Jurnal Terisi</th>
                 <th className="p-2.5 text-center">Skor Kepatuhan</th>
                 <th className="p-2.5 text-center">Status Keterbiasaan</th>
-                <th className="p-2.5 text-center">Validasi Ortu</th>
-                <th className="p-2.5 rounded-r-lg text-center">Aksi Bimbingan</th>
+                <th className="p-2.5 text-center">Status Validasi Ortu</th>
+                <th className="p-2.5 rounded-r-lg text-center">Aksi Bimbingan & SOP</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -502,12 +609,43 @@ export const TeacherDashboard: React.FC = () => {
                     </span>
                   </td>
                   <td className="p-2.5 text-center">
-                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                      {row.validationRate}%
-                    </span>
+                    <div className="flex flex-col items-center gap-1">
+                      {row.isPendingParentValidation ? (
+                        <div className="flex items-center gap-1">
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5 text-rose-500" />
+                            <span>Belum Konfirmasi</span>
+                          </span>
+                        </div>
+                      ) : row.entriesCount > 0 ? (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                          <Check className="w-2.5 h-2.5" />
+                          <span>Terkonfirmasi ({row.validationRate}%)</span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400">
+                          Belum Ada Entri
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="p-2.5 text-center">
                     <div className="flex items-center justify-center gap-1">
+                      {/* WA Reminder Button (Direct SOP Trigger) */}
+                      <button
+                        onClick={() => handleOpenWAReminderForStudent(row.student)}
+                        title="Kirim Pengingat WhatsApp ke Orang Tua (Sesuai SOP)"
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all ${
+                          row.isPendingParentValidation
+                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs animate-pulse'
+                            : 'bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-400'
+                        }`}
+                      >
+                        <MessageCircle className="w-3 h-3" />
+                        <span>{row.isPendingParentValidation ? 'Ingatkan WA' : 'Chat Ortu'}</span>
+                      </button>
+
+                      {/* Teacher Guidance / Notes */}
                       <button
                         onClick={() => {
                           setInspectingStudent(row.student);
@@ -518,6 +656,8 @@ export const TeacherDashboard: React.FC = () => {
                         <MessageSquare className="w-3 h-3" />
                         <span>Bimbingan</span>
                       </button>
+
+                      {/* PDF Report Export */}
                       <button
                         onClick={() => handleExportStudentPDF(row.student)}
                         title="Cetak Laporan PDF Siswa"
@@ -646,14 +786,27 @@ export const TeacherDashboard: React.FC = () => {
             </div>
 
             {/* Footer */}
-            <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <button
-                onClick={() => handleExportStudentPDF(inspectingStudent)}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5"
-              >
-                <FileDown className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Cetak Rapor Bulanan Siswa (PDF)</span>
-              </button>
+            <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    handleOpenWAReminderForStudent(inspectingStudent);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Ingatkan Ortu via WA</span>
+                </button>
+
+                <button
+                  onClick={() => handleExportStudentPDF(inspectingStudent)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Cetak Rapor Bulanan (PDF)</span>
+                </button>
+              </div>
+
               <button
                 onClick={() => setInspectingStudent(null)}
                 className="px-3.5 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-semibold"
@@ -664,6 +817,19 @@ export const TeacherDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* MODAL SOP PENGINGAT WHATSAPP ORANG TUA */}
+      <ParentWAReminderModal
+        isOpen={isWAReminderOpen}
+        onClose={() => setIsWAReminderOpen(false)}
+        selectedStudent={waSelectedStudent}
+        onSelectStudent={(student) => setWaSelectedStudent(student)}
+        allStudents={classStudents}
+        allUsers={allUsers}
+        getStudentJournals={getStudentJournals}
+        currentTeacher={currentUser}
+        className={selectedClassName}
+      />
     </div>
   );
 };

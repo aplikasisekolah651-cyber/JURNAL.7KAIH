@@ -78,7 +78,8 @@ export class PDFReportGenerator {
     entries: JournalEntry[],
     monthName: string,
     teacherFeedbackGlobal?: string,
-    customConfig?: SchoolSettings
+    customConfig?: SchoolSettings,
+    teacherInfo?: { name: string; nip?: string }
   ) {
     const config = customConfig || this.getActiveSchoolSettings();
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -103,7 +104,7 @@ export class PDFReportGenerator {
     doc.setFontSize(9);
     doc.setDrawColor(203, 213, 225);
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(margin, infoY, pageWidth - 2 * margin, 24, 2, 2, 'FD');
+    doc.roundedRect(margin, infoY, pageWidth - 2 * margin, 26, 2, 2, 'FD');
 
     doc.setFont('helvetica', 'bold');
     doc.text('Nama Siswa', margin + 4, infoY + 6);
@@ -143,12 +144,17 @@ export class PDFReportGenerator {
     } else {
       doc.setTextColor(225, 29, 72); // rose
     }
-    doc.text(`: ${KATEGORI_CONFIG[kategori].label.toUpperCase()}`, margin + 144, infoY + 18);
+
+    // Split text so if Tingkat Keterbiasaan is long, it wraps cleanly onto the next line
+    const kategoriTextLines = doc.splitTextToSize(`: ${KATEGORI_CONFIG[kategori].label.toUpperCase()}`, 38);
+    kategoriTextLines.forEach((line: string, idx: number) => {
+      doc.text(line, margin + 144, infoY + 18 + (idx * 4));
+    });
 
     doc.setTextColor(30, 41, 59);
 
-    // 4. Rekapitulasi 7 Kebiasaan Table
-    const tableTitleY = infoY + 30;
+    // 4. Rekapitulasi 7 Kebiasaan Table (Exact matching format from user reference)
+    const tableTitleY = infoY + 32;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.text('I. Rekapitulasi Pelaksanaan 7 Pilar Kebiasaan', margin, tableTitleY);
@@ -164,9 +170,9 @@ export class PDFReportGenerator {
 
       return [
         (idx + 1).toString(),
-        def.shortName,
+        def.shortName || def.title,
         def.tagline,
-        `${completedTimes} / ${totalDays} hari`,
+        `${completedTimes} / ${totalDays || 1} hari`,
         `${rate}%`,
         habitStatus
       ];
@@ -178,24 +184,30 @@ export class PDFReportGenerator {
       body: habitRows,
       theme: 'grid',
       headStyles: {
-        fillColor: [30, 58, 138], // Indigo-900
-        textColor: 255,
-        fontSize: 8,
+        fillColor: [26, 68, 148], // Dark Blue as shown in the reference image
+        textColor: [255, 255, 255],
         fontStyle: 'bold',
+        fontSize: 8,
         halign: 'center'
       },
       styles: {
         fontSize: 7.5,
-        cellPadding: 2
+        cellPadding: { top: 2.5, bottom: 2.5, left: 2, right: 2 },
+        overflow: 'linebreak',
+        textColor: [30, 41, 59],
+        lineColor: [203, 213, 225],
+        lineWidth: 0.2
       },
       columnStyles: {
         0: { halign: 'center', cellWidth: 8 },
-        1: { fontStyle: 'bold', cellWidth: 34 },
-        2: { cellWidth: 56 },
-        3: { halign: 'center', cellWidth: 26 },
-        4: { halign: 'center', fontStyle: 'bold', cellWidth: 20 },
-        5: { fontStyle: 'bold', cellWidth: 38 }
-      }
+        1: { fontStyle: 'bold', cellWidth: 30 },
+        2: { cellWidth: 62 },
+        3: { halign: 'center', cellWidth: 24 },
+        4: { halign: 'center', fontStyle: 'bold', cellWidth: 18 },
+        5: { fontStyle: 'bold', cellWidth: 40, overflow: 'linebreak' }
+      },
+      margin: { left: margin, right: margin },
+      tableWidth: 182
     });
 
     // 5. Catatan Wali Kelas & Evaluasi Ortu
@@ -242,11 +254,14 @@ export class PDFReportGenerator {
     doc.text('Tanda Tangan & Nama Terang', margin + colW + (colW / 2), currentY + 22, { align: 'center' });
 
     // Column 3: Wali Kelas
+    const displayTeacherName = teacherInfo?.name || 'Ibu Siti Rahmawati, S.Pd.';
+    const displayTeacherNip = teacherInfo?.nip ? `NIP. ${teacherInfo.nip}` : 'NIP. 19850314 200801 2 007';
+
     doc.text('Wali Kelas,', margin + 2 * colW + (colW / 2), currentY, { align: 'center' });
     doc.setFont('helvetica', 'bold');
-    doc.text('Ibu Siti Rahmawati, S.Pd.', margin + 2 * colW + (colW / 2), currentY + 18, { align: 'center' });
+    doc.text(displayTeacherName, margin + 2 * colW + (colW / 2), currentY + 18, { align: 'center' });
     doc.setFont('helvetica', 'normal');
-    doc.text('NIP. 19850314 200801 2 007', margin + 2 * colW + (colW / 2), currentY + 22, { align: 'center' });
+    doc.text(displayTeacherNip, margin + 2 * colW + (colW / 2), currentY + 22, { align: 'center' });
 
     // Bottom Center: Mengetahui Kepala Sekolah (Digeser 2 baris ke bawah agar longgar & rapi)
     currentY += 35;
@@ -273,7 +288,8 @@ export class PDFReportGenerator {
     monthName: string,
     summary: ClassAnalysisSummary,
     studentsList: { student: User; score: number; level: HabitKategoriLevel; entriesCount: number; validationRate: number }[],
-    customConfig?: SchoolSettings
+    customConfig?: SchoolSettings,
+    teacherNip?: string
   ) {
     const config = customConfig || this.getActiveSchoolSettings();
     const doc = new jsPDF('l', 'mm', 'a4'); // Landscape
@@ -361,10 +377,10 @@ export class PDFReportGenerator {
       body: tableBody,
       theme: 'striped',
       headStyles: {
-        fillColor: [30, 58, 138],
-        textColor: 255,
-        fontSize: 8,
+        fillColor: [15, 23, 42],
+        textColor: [255, 255, 255],
         fontStyle: 'bold',
+        fontSize: 7.5,
         halign: 'center'
       },
       styles: {
@@ -407,7 +423,7 @@ export class PDFReportGenerator {
 
     doc.setFont('helvetica', 'normal');
     doc.text(`NIP. ${config.principalNip}`, 50, endY + 4, { align: 'center' });
-    doc.text('NIP. 19850314 200801 2 007', pageWidth - 50, endY + 4, { align: 'center' });
+    doc.text(teacherNip ? `NIP. ${teacherNip}` : 'NIP. 19850314 200801 2 007', pageWidth - 50, endY + 4, { align: 'center' });
 
     const filename = `Rekap_Kelas_7KAIH_${className.replace(/\s+/g, '_')}_${monthName}.pdf`;
     doc.save(filename);
