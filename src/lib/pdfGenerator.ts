@@ -5,6 +5,67 @@ import { HABIT_DEFINITIONS, KATEGORI_CONFIG, DEFAULT_SCHOOL_SETTINGS } from './c
 
 export class PDFReportGenerator {
   /**
+   * Helper to retrieve assigned teacher name and NIP for a specific class from stored users
+   */
+  public static getTeacherForClass(className?: string, usersList?: User[]): { name: string; nip?: string } | undefined {
+    try {
+      let users: User[] = usersList || [];
+      if (!users || users.length === 0) {
+        const savedUsers = localStorage.getItem('7kaih_users_v1');
+        if (savedUsers) {
+          users = JSON.parse(savedUsers) as User[];
+        }
+      }
+
+      if (users && users.length > 0 && className) {
+        const rawClass = className.trim();
+        const classNumMatch = rawClass.match(/([7-9]|vii|viii|ix)\s*([a-z])/i);
+        let normalizedCode = '';
+        if (classNumMatch) {
+          let num = classNumMatch[1].toLowerCase();
+          if (num === 'vii') num = '7';
+          if (num === 'viii') num = '8';
+          if (num === 'ix') num = '9';
+          normalizedCode = `${num}${classNumMatch[2].toLowerCase()}`;
+        } else {
+          normalizedCode = rawClass.toLowerCase().replace(/[^a-z0-9]/g, '');
+        }
+
+        // 1. Direct match by assignedClassIds or className
+        const teacher = users.find(u => {
+          if (u.role !== 'walikelas') return false;
+          
+          if (u.assignedClassIds && u.assignedClassIds.some(cid => {
+            const cleanCid = cid.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return cleanCid.includes(normalizedCode) || normalizedCode.includes(cleanCid);
+          })) {
+            return true;
+          }
+
+          if (u.className) {
+            const tClass = u.className.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return tClass.includes(normalizedCode) || normalizedCode.includes(tClass);
+          }
+          return false;
+        });
+
+        if (teacher) {
+          return { name: teacher.name, nip: teacher.nip };
+        }
+
+        // 2. Fallback: Any registered walikelas
+        const anyWali = users.find(u => u.role === 'walikelas');
+        if (anyWali) {
+          return { name: anyWali.name, nip: anyWali.nip };
+        }
+      }
+    } catch (e) {
+      console.warn('PDF generator teacher lookup fallback:', e);
+    }
+    return undefined;
+  }
+
+  /**
    * Helper to retrieve current active school settings from localStorage or fallback
    */
   public static getActiveSchoolSettings(): SchoolSettings {
@@ -254,8 +315,11 @@ export class PDFReportGenerator {
     doc.text('Tanda Tangan & Nama Terang', margin + colW + (colW / 2), currentY + 22, { align: 'center' });
 
     // Column 3: Wali Kelas
-    const displayTeacherName = teacherInfo?.name || 'Ibu Siti Rahmawati, S.Pd.';
-    const displayTeacherNip = teacherInfo?.nip ? `NIP. ${teacherInfo.nip}` : 'NIP. 19850314 200801 2 007';
+    const lookupTeacher = this.getTeacherForClass(student.className);
+    const displayTeacherName = teacherInfo?.name || lookupTeacher?.name || (student.className ? `Wali Kelas ${student.className}` : 'Wali Kelas');
+    const displayTeacherNip = teacherInfo?.nip 
+      ? `NIP. ${teacherInfo.nip}` 
+      : (lookupTeacher?.nip ? `NIP. ${lookupTeacher.nip}` : 'NIP. -');
 
     doc.text('Wali Kelas,', margin + 2 * colW + (colW / 2), currentY, { align: 'center' });
     doc.setFont('helvetica', 'bold');
@@ -416,14 +480,20 @@ export class PDFReportGenerator {
     doc.text(`Kepala ${config.name}`, 50, endY + 4, { align: 'center' });
     doc.text('Wali Kelas,', pageWidth - 50, endY + 4, { align: 'center' });
 
+    const lookupTeacher = this.getTeacherForClass(className);
+    const displayClassTeacherName = teacherName || lookupTeacher?.name || `Wali Kelas ${className}`;
+    const displayClassTeacherNip = teacherNip 
+      ? `NIP. ${teacherNip}` 
+      : (lookupTeacher?.nip ? `NIP. ${lookupTeacher.nip}` : 'NIP. -');
+
     endY += 20;
     doc.setFont('helvetica', 'bold');
     doc.text(config.principalName, 50, endY, { align: 'center' });
-    doc.text(teacherName, pageWidth - 50, endY, { align: 'center' });
+    doc.text(displayClassTeacherName, pageWidth - 50, endY, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
     doc.text(`NIP. ${config.principalNip}`, 50, endY + 4, { align: 'center' });
-    doc.text(teacherNip ? `NIP. ${teacherNip}` : 'NIP. 19850314 200801 2 007', pageWidth - 50, endY + 4, { align: 'center' });
+    doc.text(displayClassTeacherNip, pageWidth - 50, endY + 4, { align: 'center' });
 
     const filename = `Rekap_Kelas_7KAIH_${className.replace(/\s+/g, '_')}_${monthName}.pdf`;
     doc.save(filename);

@@ -263,11 +263,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
 
       {/* Tabs Navigation */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 border-b border-slate-200 dark:border-slate-800 pb-2">
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           <button
             id="tab-student-form"
             onClick={() => setActiveTab('form')}
-            className={`px-3 py-2 min-h-[38px] rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            className={`px-4 py-2.5 min-h-[42px] rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
               activeTab === 'form'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -278,7 +278,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
           <button
             id="tab-student-analytics"
             onClick={() => setActiveTab('analytics')}
-            className={`px-3 py-2 min-h-[38px] rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            className={`px-4 py-2.5 min-h-[42px] rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
               activeTab === 'analytics'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -289,7 +289,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
           <button
             id="tab-student-history"
             onClick={() => setActiveTab('history')}
-            className={`px-3 py-2 min-h-[38px] rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            className={`px-4 py-2.5 min-h-[42px] rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
               activeTab === 'history'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -300,17 +300,17 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
         </div>
 
         {/* Date Selector */}
-        <div className="flex items-center justify-between sm:justify-start gap-2 bg-white dark:bg-[#1E293B] px-3 py-1.5 min-h-[38px] rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center gap-1.5">
+        <div className="flex items-center justify-between sm:justify-start gap-2.5 bg-white dark:bg-[#1E293B] px-3.5 py-2 min-h-[42px] rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 sm:hidden">Pilih Tanggal:</span>
+            <span className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400 sm:hidden">Pilih Tanggal:</span>
           </div>
           <input
             type="date"
             value={selectedDate}
             max={todayStr}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="text-xs font-semibold text-slate-800 dark:text-slate-200 bg-transparent outline-none cursor-pointer"
+            className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 bg-transparent outline-none cursor-pointer"
           />
         </div>
       </div>
@@ -320,47 +320,47 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
         <div className="space-y-6">
           {/* Status Validation Alert Banner */}
           {existingJournal?.status === 'validated' && (
-            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 rounded-2xl flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
-                  <CheckCircle2 className="w-5 h-5" />
+            <div className="p-4 sm:p-5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 rounded-2xl flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+                  <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h4 className="text-sm sm:text-base font-bold text-emerald-900 dark:text-emerald-200">
                       Telah Divalidasi Orang Tua ({existingJournal.parentValidation?.parentName})
                     </h4>
                     <div className="flex items-center text-amber-400">
                       {Array.from({ length: existingJournal.parentValidation?.rating || 5 }).map((_, i) => (
-                        <Star key={i} className="w-3.5 h-3.5 fill-current" />
+                        <Star key={i} className="w-4 h-4 fill-current" />
                       ))}
                     </div>
                   </div>
-                  <p className="text-xs text-emerald-800 dark:text-emerald-300 mt-1 italic">
+                  <p className="text-xs sm:text-sm text-emerald-800 dark:text-emerald-300 mt-1.5 italic">
                     "{existingJournal.parentValidation?.notes || 'Bagus sekali ananda! Pertahankan kebiasaan baik ini.'}"
                   </p>
                 </div>
               </div>
-              <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 px-2.5 py-1 rounded-full shrink-0">
+              <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/50 px-3 py-1.5 rounded-full shrink-0">
                 Resmi Tervalidasi
               </span>
             </div>
           )}
 
           {existingJournal?.teacherFeedback?.reviewed && (
-            <div className="p-4 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/80 rounded-2xl flex items-start gap-3">
-              <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">
-                <Award className="w-5 h-5" />
+            <div className="p-4 sm:p-5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/80 rounded-2xl flex items-start gap-3.5">
+              <div className="p-2.5 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">
+                <Award className="w-6 h-6" />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-blue-900 dark:text-blue-200">
+                <h4 className="text-sm sm:text-base font-bold text-blue-900 dark:text-blue-200">
                   Catatan Bimbingan Wali Kelas ({existingJournal.teacherFeedback?.teacherName})
                 </h4>
-                <p className="text-xs text-blue-800 dark:text-blue-300 mt-1">
+                <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-300 mt-1.5">
                   "{existingJournal.teacherFeedback?.notes}"
                 </p>
                 {existingJournal.teacherFeedback?.badgeAwarded && (
-                  <span className="inline-block mt-2 px-2 py-0.5 text-[10px] font-bold bg-blue-200/60 dark:bg-blue-900/80 text-blue-800 dark:text-blue-200 rounded-md">
+                  <span className="inline-block mt-2.5 px-3 py-1 text-xs font-bold bg-blue-200/60 dark:bg-blue-900/80 text-blue-800 dark:text-blue-200 rounded-lg">
                     🎖️ {existingJournal.teacherFeedback?.badgeAwarded}
                   </span>
                 )}
@@ -369,17 +369,17 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
           )}
 
           {/* Progress Bar */}
-          <div className="bg-white dark:bg-[#1E293B] p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+          <div className="bg-white dark:bg-[#1E293B] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+            <div className="flex items-center justify-between text-xs sm:text-sm">
+              <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-500" />
                 Kemajuan Checklist 7 Kebiasaan ({selectedDate})
               </span>
-              <span className="font-bold text-indigo-600 dark:text-indigo-400">
+              <span className="font-extrabold text-indigo-600 dark:text-indigo-400">
                 {completedCount} dari 7 Selesai ({completionPercentage}%)
               </span>
             </div>
-            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden p-0.5">
+            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden p-0.5">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500 transition-all duration-300"
                 style={{ width: `${completionPercentage}%` }}
@@ -388,7 +388,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
           </div>
 
           {/* The 7 Habits Accordion / Cards List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {HABIT_LIST.map((habit) => {
               const itemData = habitsData[habit.id] || {
                 habitId: habit.id,
@@ -401,24 +401,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
               return (
                 <div
                   key={habit.id}
-                  className={`rounded-xl border transition-all duration-200 overflow-hidden flex flex-col justify-between ${
+                  className={`rounded-2xl border transition-all duration-200 overflow-hidden flex flex-col justify-between ${
                     itemData.completed
                       ? 'bg-white dark:bg-[#1E293B] border-indigo-300 dark:border-indigo-800/80 shadow-xs ring-1 ring-indigo-500/20'
                       : 'bg-white dark:bg-[#1E293B]/70 border-slate-200 dark:border-slate-800 shadow-xs'
                   }`}
                 >
                   {/* Card Header */}
-                  <div className="p-3 space-y-2.5">
-                    <div className="flex items-start justify-between gap-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${habit.badgeBg} shrink-0`}>
-                          <HabitIcon habitId={habit.id} size={16} />
+                  <div className="p-4 sm:p-5 space-y-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${habit.badgeBg} shrink-0`}>
+                          <HabitIcon habitId={habit.id} size={20} />
                         </div>
                         <div>
-                          <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+                          <h3 className="text-sm sm:text-base lg:text-lg font-bold text-slate-900 dark:text-white">
                             {habit.title}
                           </h3>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
                             {habit.tagline}
                           </p>
                         </div>
@@ -428,7 +428,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                       <button
                         id={`toggle-habit-${habit.id}`}
                         onClick={() => handleToggleHabit(habit.id)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${
+                        className={`px-3.5 py-1.5 min-h-[38px] rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
                           itemData.completed
                             ? 'bg-emerald-600 text-white shadow-xs'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60'
@@ -436,7 +436,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                       >
                         {itemData.completed ? (
                           <>
-                            <Check className="w-3 h-3" />
+                            <Check className="w-4 h-4" />
                             <span>Terlaksana</span>
                           </>
                         ) : (
@@ -446,14 +446,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                     </div>
 
                     {/* Subtasks Detail Inputs */}
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2 text-xs">
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-3 text-xs sm:text-sm">
                       {/* Custom UI for Ibadah */}
                       {habit.id === 'ibadah' && (
-                        <div className="space-y-2">
-                          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                        <div className="space-y-3">
+                          <p className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
                             Ibadah Wajib 5 Waktu
                           </p>
-                          <div className="grid grid-cols-5 gap-1">
+                          <div className="grid grid-cols-5 gap-1.5">
                             {[
                               { key: 'prayerFajr', label: 'Subuh' },
                               { key: 'prayerDhuhr', label: 'Dzuhur' },
@@ -470,7 +470,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                     handleUpdateSubValue('ibadah', p.key, !isChecked);
                                     if (!itemData.completed) handleToggleHabit('ibadah');
                                   }}
-                                  className={`py-1 px-1 rounded-md text-[10px] font-bold border transition-all text-center ${
+                                  className={`py-2 px-1 rounded-lg text-xs sm:text-sm font-bold border transition-all text-center cursor-pointer ${
                                     isChecked
                                       ? 'bg-emerald-500 text-white border-emerald-600 shadow-xs'
                                       : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
@@ -483,8 +483,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                           </div>
 
                           {/* Puasa / Sholat Sunnah */}
-                          <div className="p-2 rounded-lg bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-1">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-semibold text-xs">
+                          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
                               <input
                                 type="checkbox"
                                 checked={!!itemData.values?.sunnahWorship}
@@ -492,7 +492,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                   handleUpdateSubValue('ibadah', 'sunnahWorship', e.target.checked);
                                   if (!itemData.completed && e.target.checked) handleToggleHabit('ibadah');
                                 }}
-                                className="w-3.5 h-3.5 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                                className="w-4 h-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
                               />
                               <span>Puasa Sunnah / Sholat Sunnah (Tahajud / Dhuha / Rawatib)</span>
                             </label>
@@ -502,14 +502,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                 placeholder="Contoh: Sholat Dhuha 4 Rakaat / Puasa Senin-Kamis"
                                 value={itemData.values?.sunnahDetail || ''}
                                 onChange={(e) => handleUpdateSubValue('ibadah', 'sunnahDetail', e.target.value)}
-                                className="w-full px-2 py-1 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
+                                className="w-full px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
                               />
                             )}
                           </div>
 
                           {/* Baca Kitab Suci */}
-                          <div className="p-2 rounded-lg bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-1">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-semibold text-xs">
+                          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
                               <input
                                 type="checkbox"
                                 checked={!!itemData.values?.holyBookReading}
@@ -517,7 +517,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                   handleUpdateSubValue('ibadah', 'holyBookReading', e.target.checked);
                                   if (!itemData.completed && e.target.checked) handleToggleHabit('ibadah');
                                 }}
-                                className="w-3.5 h-3.5 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                                className="w-4 h-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
                               />
                               <span>Membaca Kitab Suci / Tadarus Al-Qur'an</span>
                             </label>
@@ -527,14 +527,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                 placeholder="Contoh: QS. Al-Kahfi Ayat 1-20 / Juz 1 Hlm 1-5"
                                 value={itemData.values?.holyBookDetail || ''}
                                 onChange={(e) => handleUpdateSubValue('ibadah', 'holyBookDetail', e.target.value)}
-                                className="w-full px-2 py-1 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
+                                className="w-full px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
                               />
                             )}
                           </div>
 
                           {/* Sedekah */}
-                          <div className="p-2 rounded-lg bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-1">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-semibold text-xs">
+                          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
                               <input
                                 type="checkbox"
                                 checked={!!itemData.values?.almsGiving}
@@ -542,7 +542,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                   handleUpdateSubValue('ibadah', 'almsGiving', e.target.checked);
                                   if (!itemData.completed && e.target.checked) handleToggleHabit('ibadah');
                                 }}
-                                className="w-3.5 h-3.5 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                                className="w-4 h-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500"
                               />
                               <span>Sedekah / Infaq / Berbagi Kebaikan</span>
                             </label>
@@ -552,14 +552,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                 placeholder="Contoh: Infaq kotak amal masjid & berbagi makanan"
                                 value={itemData.values?.almsDetail || ''}
                                 onChange={(e) => handleUpdateSubValue('ibadah', 'almsDetail', e.target.value)}
-                                className="w-full px-2 py-1 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
+                                className="w-full px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
                               />
                             )}
                           </div>
 
                           {/* Doa / Kebaikan Spiritual */}
-                          <div className="space-y-0.5">
-                            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                          <div className="space-y-1">
+                            <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                               Doa / Kebaikan Spiritual Hari Ini
                             </label>
                             <input
@@ -567,7 +567,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                               placeholder="Tuliskan doa atau rasa syukurmu..."
                               value={itemData.values?.spiritualNote || ''}
                               onChange={(e) => handleUpdateSubValue('ibadah', 'spiritualNote', e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500"
                             />
                           </div>
                         </div>
@@ -575,10 +575,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
 
                       {/* Custom UI for Makan Sehat (Sarapan, Makan Siang, Makan Malam + Menu Lain) */}
                       {habit.id === 'makan_sehat' && (
-                        <div className="space-y-2.5">
+                        <div className="space-y-3">
                           {/* 1. Sarapan */}
-                          <div className="p-2 rounded-lg bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-1.5">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-semibold text-xs">
+                          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
                               <input
                                 type="checkbox"
                                 checked={!!itemData.values?.breakfastEaten}
@@ -586,15 +586,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                   handleUpdateSubValue('makan_sehat', 'breakfastEaten', e.target.checked);
                                   if (!itemData.completed && e.target.checked) handleToggleHabit('makan_sehat');
                                 }}
-                                className="w-3.5 h-3.5 rounded text-green-600 border-slate-300 focus:ring-green-500"
+                                className="w-4 h-4 rounded text-green-600 border-slate-300 focus:ring-green-500"
                               />
                               <span>🌅 Sarapan Pagi Bergizi</span>
                             </label>
-                            <div className="space-y-1">
+                            <div className="space-y-1.5">
                               <select
                                 value={itemData.values?.breakfastMenu || ''}
                                 onChange={(e) => handleUpdateSubValue('makan_sehat', 'breakfastMenu', e.target.value)}
-                                className="w-full px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 outline-none"
+                                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 outline-none"
                               >
                                 <option value="">-- Pilih Menu Sarapan --</option>
                                 <option value="Nasi + Telur Mata Sapi + Tumis Sayur">Nasi + Telur Mata Sapi + Tumis Sayur</option>
@@ -610,15 +610,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                   placeholder="Tulis menu sarapan sehat lainnya..."
                                   value={itemData.values?.breakfastCustom || ''}
                                   onChange={(e) => handleUpdateSubValue('makan_sehat', 'breakfastCustom', e.target.value)}
-                                  className="w-full px-2 py-1 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
+                                  className="w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
                                 />
                               )}
                             </div>
                           </div>
 
                           {/* 2. Makan Siang */}
-                          <div className="p-2 rounded-lg bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-1.5">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-semibold text-xs">
+                          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
                               <input
                                 type="checkbox"
                                 checked={!!itemData.values?.lunchEaten}
@@ -626,15 +626,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                   handleUpdateSubValue('makan_sehat', 'lunchEaten', e.target.checked);
                                   if (!itemData.completed && e.target.checked) handleToggleHabit('makan_sehat');
                                 }}
-                                className="w-3.5 h-3.5 rounded text-green-600 border-slate-300 focus:ring-green-500"
+                                className="w-4 h-4 rounded text-green-600 border-slate-300 focus:ring-green-500"
                               />
                               <span>☀️ Makan Siang Sehat & Seimbang</span>
                             </label>
-                            <div className="space-y-1">
+                            <div className="space-y-1.5">
                               <select
                                 value={itemData.values?.lunchMenu || ''}
                                 onChange={(e) => handleUpdateSubValue('makan_sehat', 'lunchMenu', e.target.value)}
-                                className="w-full px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 outline-none"
+                                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 outline-none"
                               >
                                 <option value="">-- Pilih Menu Makan Siang --</option>
                                 <option value="Nasi + Ikan Bakar / Ayam + Sayur Asam / Bayam">Nasi + Ikan Bakar / Ayam + Sayur Asam / Bayam</option>
@@ -649,15 +649,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                   placeholder="Tulis menu makan siang sehat lainnya..."
                                   value={itemData.values?.lunchCustom || ''}
                                   onChange={(e) => handleUpdateSubValue('makan_sehat', 'lunchCustom', e.target.value)}
-                                  className="w-full px-2 py-1 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
+                                  className="w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
                                 />
                               )}
                             </div>
                           </div>
 
                           {/* 3. Makan Malam */}
-                          <div className="p-2 rounded-lg bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-1.5">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-semibold text-xs">
+                          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm">
                               <input
                                 type="checkbox"
                                 checked={!!itemData.values?.dinnerEaten}
@@ -665,15 +665,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                   handleUpdateSubValue('makan_sehat', 'dinnerEaten', e.target.checked);
                                   if (!itemData.completed && e.target.checked) handleToggleHabit('makan_sehat');
                                 }}
-                                className="w-3.5 h-3.5 rounded text-green-600 border-slate-300 focus:ring-green-500"
+                                className="w-4 h-4 rounded text-green-600 border-slate-300 focus:ring-green-500"
                               />
                               <span>🌙 Makan Malam Bergizi (Sebelum Pukul 19.30)</span>
                             </label>
-                            <div className="space-y-1">
+                            <div className="space-y-1.5">
                               <select
                                 value={itemData.values?.dinnerMenu || ''}
                                 onChange={(e) => handleUpdateSubValue('makan_sehat', 'dinnerMenu', e.target.value)}
-                                className="w-full px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 outline-none"
+                                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 outline-none"
                               >
                                 <option value="">-- Pilih Menu Makan Malam --</option>
                                 <option value="Nasi Porsi Sedang + Sup Ayam Sayuran">Nasi Porsi Sedang + Sup Ayam Sayuran</option>
@@ -688,47 +688,47 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                   placeholder="Tulis menu makan malam sehat lainnya..."
                                   value={itemData.values?.dinnerCustom || ''}
                                   onChange={(e) => handleUpdateSubValue('makan_sehat', 'dinnerCustom', e.target.value)}
-                                  className="w-full px-2 py-1 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
+                                  className="w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none"
                                 />
                               )}
                             </div>
                           </div>
 
                           {/* Extra healthy habits */}
-                          <div className="grid grid-cols-2 gap-2 pt-1">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-700 dark:text-slate-300">
+                          <div className="grid grid-cols-2 gap-2.5 pt-1">
+                            <label className="flex items-center gap-2 cursor-pointer text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
                               <input
                                 type="checkbox"
                                 checked={!!itemData.values?.hasVegetables}
                                 onChange={(e) => handleUpdateSubValue('makan_sehat', 'hasVegetables', e.target.checked)}
-                                className="w-3.5 h-3.5 rounded text-green-600"
+                                className="w-4 h-4 rounded text-green-600"
                               />
                               <span>Makan Sayur Segar</span>
                             </label>
-                            <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-700 dark:text-slate-300">
+                            <label className="flex items-center gap-2 cursor-pointer text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
                               <input
                                 type="checkbox"
                                 checked={!!itemData.values?.hasFruits}
                                 onChange={(e) => handleUpdateSubValue('makan_sehat', 'hasFruits', e.target.checked)}
-                                className="w-3.5 h-3.5 rounded text-green-600"
+                                className="w-4 h-4 rounded text-green-600"
                               />
                               <span>Makan Buah</span>
                             </label>
                           </div>
 
-                          <div className="flex items-center justify-between gap-2 pt-1">
-                            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                          <div className="flex items-center justify-between gap-3 pt-1">
+                            <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                               Jumlah Gelas Air Putih
                             </label>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-2">
                               <input
                                 type="number"
                                 placeholder="Target: 8"
                                 value={itemData.values?.waterGlasses || ''}
                                 onChange={(e) => handleUpdateSubValue('makan_sehat', 'waterGlasses', e.target.value)}
-                                className="w-16 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 outline-none text-center"
+                                className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 outline-none text-center"
                               />
-                              <span className="text-[10px] text-slate-400">gelas</span>
+                              <span className="text-xs sm:text-sm text-slate-400">gelas</span>
                             </div>
                           </div>
                         </div>
@@ -736,9 +736,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
 
                       {/* Custom UI for Membaca / Gemar Belajar (Jam Mulai & Jam Berakhir) */}
                       {habit.id === 'membaca' && (
-                        <div className="space-y-2">
-                          <div className="space-y-0.5">
-                            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                               Judul Buku / Materi Pelajaran yang Dipelajari
                             </label>
                             <input
@@ -746,38 +746,38 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                               placeholder="Contoh: IPA Bab Energi / Kisah Tokoh Sains Hebat"
                               value={itemData.values?.bookTitle || ''}
                               onChange={(e) => handleUpdateSubValue('membaca', 'bookTitle', e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
                             />
                           </div>
 
                           {/* Jam Mulai dan Jam Berakhir */}
-                          <div className="grid grid-cols-2 gap-2 p-2 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/50">
+                          <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/50">
                             <div>
-                              <label className="text-[10px] font-bold text-blue-700 dark:text-blue-300 block mb-0.5">
+                              <label className="text-xs sm:text-sm font-bold text-blue-700 dark:text-blue-300 block mb-1">
                                 ⏱️ Jam Mulai Belajar
                               </label>
                               <input
                                 type="time"
                                 value={itemData.values?.startTime || '16:00'}
                                 onChange={(e) => handleUpdateSubValue('membaca', 'startTime', e.target.value)}
-                                className="w-full px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none"
+                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 outline-none"
                               />
                             </div>
                             <div>
-                              <label className="text-[10px] font-bold text-blue-700 dark:text-blue-300 block mb-0.5">
+                              <label className="text-xs sm:text-sm font-bold text-blue-700 dark:text-blue-300 block mb-1">
                                 ⏱️ Jam Berakhir Belajar
                               </label>
                               <input
                                 type="time"
                                 value={itemData.values?.endTime || '16:45'}
                                 onChange={(e) => handleUpdateSubValue('membaca', 'endTime', e.target.value)}
-                                className="w-full px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none"
+                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 outline-none"
                               />
                             </div>
                           </div>
 
-                          <div className="space-y-0.5">
-                            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                          <div className="space-y-1">
+                            <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                               Halaman / Bab yang Dipelajari
                             </label>
                             <input
@@ -785,12 +785,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                               placeholder="Contoh: Hlm. 12 - 25"
                               value={itemData.values?.pageRange || ''}
                               onChange={(e) => handleUpdateSubValue('membaca', 'pageRange', e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 outline-none"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 outline-none"
                             />
                           </div>
 
-                          <div className="space-y-0.5">
-                            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                          <div className="space-y-1">
+                            <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                               Pesan / Intisari Ilmu Baru yang Didapatkan
                             </label>
                             <input
@@ -798,7 +798,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                               placeholder="Satu kalimat hikmah pelajaran..."
                               value={itemData.values?.summaryInsight || ''}
                               onChange={(e) => handleUpdateSubValue('membaca', 'summaryInsight', e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
                             />
                           </div>
                         </div>
@@ -806,9 +806,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
 
                       {/* Custom UI for Bermasyarakat (Kegiatan, Dengan Siapa, Manfaat) */}
                       {habit.id === 'bermasyarakat' && (
-                        <div className="space-y-2">
-                          <div className="space-y-0.5">
-                            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                               Nama Kegiatan Sosial / Tolong Menolong
                             </label>
                             <input
@@ -816,16 +816,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                               placeholder="Contoh: Membantu kerja bakti lingkungan / Membantu adik belajar"
                               value={itemData.values?.activityName || ''}
                               onChange={(e) => handleUpdateSubValue('bermasyarakat', 'activityName', e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500"
                             />
                           </div>
 
                           {/* Dengan Siapa (Keluarga, Teman, Tetangga) */}
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                          <div className="space-y-1.5">
+                            <label className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300">
                               Dengan Siapa Kegiatan Dilakukan:
                             </label>
-                            <div className="grid grid-cols-3 gap-1.5">
+                            <div className="grid grid-cols-3 gap-2">
                               {['Keluarga', 'Teman', 'Tetangga'].map((person) => {
                                 const isSelected = itemData.values?.withWhom === person;
                                 return (
@@ -833,7 +833,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                     key={person}
                                     type="button"
                                     onClick={() => handleUpdateSubValue('bermasyarakat', 'withWhom', person)}
-                                    className={`py-1 px-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                                    className={`py-2 px-2.5 rounded-xl text-xs sm:text-sm font-bold border transition-all text-center cursor-pointer ${
                                       isSelected
                                         ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
                                         : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/40'
@@ -847,8 +847,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                           </div>
 
                           {/* Manfaat Kegiatan */}
-                          <div className="space-y-0.5">
-                            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                          <div className="space-y-1">
+                            <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                               Manfaat Kegiatan yang Dirasakan
                             </label>
                             <input
@@ -856,27 +856,27 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                               placeholder="Contoh: Lingkungan jadi bersih dan mempererat silaturahmi"
                               value={itemData.values?.benefits || ''}
                               onChange={(e) => handleUpdateSubValue('bermasyarakat', 'benefits', e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500"
                             />
                           </div>
 
                           {/* Supporting checkboxes */}
-                          <div className="grid grid-cols-2 gap-2 pt-1">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-700 dark:text-slate-300">
+                          <div className="grid grid-cols-2 gap-2.5 pt-1">
+                            <label className="flex items-center gap-2 cursor-pointer text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
                               <input
                                 type="checkbox"
                                 checked={!!itemData.values?.helpParents}
                                 onChange={(e) => handleUpdateSubValue('bermasyarakat', 'helpParents', e.target.checked)}
-                                className="w-3.5 h-3.5 rounded text-indigo-600"
+                                className="w-4 h-4 rounded text-indigo-600"
                               />
                               <span>Membantu Orang Tua</span>
                             </label>
-                            <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-700 dark:text-slate-300">
+                            <label className="flex items-center gap-2 cursor-pointer text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
                               <input
                                 type="checkbox"
                                 checked={!!itemData.values?.cleanEnvironment}
                                 onChange={(e) => handleUpdateSubValue('bermasyarakat', 'cleanEnvironment', e.target.checked)}
-                                className="w-3.5 h-3.5 rounded text-indigo-600"
+                                className="w-4 h-4 rounded text-indigo-600"
                               />
                               <span>Kebersihan Lingkungan</span>
                             </label>
@@ -892,7 +892,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                           return (
                             <label
                               key={sub.key}
-                              className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400"
+                              className="flex items-center gap-2.5 cursor-pointer text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium text-xs sm:text-sm"
                             >
                               <input
                                 type="checkbox"
@@ -903,23 +903,23 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                     handleToggleHabit(habit.id);
                                   }
                                 }}
-                                className="w-3.5 h-3.5 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                                className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500"
                               />
-                              <span className="text-xs">{sub.label}</span>
+                              <span>{sub.label}</span>
                             </label>
                           );
                         }
 
                         if (sub.type === 'select') {
                           return (
-                            <div key={sub.key} className="space-y-0.5">
-                              <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                            <div key={sub.key} className="space-y-1">
+                              <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                                 {sub.label}
                               </label>
                               <select
                                 value={val || ''}
                                 onChange={(e) => handleUpdateSubValue(habit.id, sub.key, e.target.value)}
-                                className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500"
+                                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500"
                               >
                                 <option value="">-- Pilih {sub.label} --</option>
                                 {sub.options?.map((opt) => (
@@ -932,15 +932,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
 
                         if (sub.type === 'time') {
                           return (
-                            <div key={sub.key} className="flex items-center justify-between gap-2">
-                              <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                            <div key={sub.key} className="flex items-center justify-between gap-3">
+                              <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                                 {sub.label}
                               </label>
                               <input
                                 type="time"
                                 value={val || habit.defaultTime}
                                 onChange={(e) => handleUpdateSubValue(habit.id, sub.key, e.target.value)}
-                                className="px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none"
+                                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 outline-none"
                               />
                             </div>
                           );
@@ -948,27 +948,27 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
 
                         if (sub.type === 'number') {
                           return (
-                            <div key={sub.key} className="flex items-center justify-between gap-2">
-                              <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                            <div key={sub.key} className="flex items-center justify-between gap-3">
+                              <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                                 {sub.label}
                               </label>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-2">
                                 <input
                                   type="number"
                                   placeholder={sub.placeholder}
                                   value={val || ''}
                                   onChange={(e) => handleUpdateSubValue(habit.id, sub.key, e.target.value)}
-                                  className="w-16 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 outline-none"
+                                  className="w-20 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 outline-none"
                                 />
-                                {sub.unit && <span className="text-[10px] text-slate-400">{sub.unit}</span>}
+                                {sub.unit && <span className="text-xs sm:text-sm text-slate-400">{sub.unit}</span>}
                               </div>
                             </div>
                           );
                         }
 
                         return (
-                          <div key={sub.key} className="space-y-0.5">
-                            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                          <div key={sub.key} className="space-y-1">
+                            <label className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400">
                               {sub.label}
                             </label>
                             <input
@@ -976,7 +976,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                               placeholder={sub.placeholder}
                               value={val || ''}
                               onChange={(e) => handleUpdateSubValue(habit.id, sub.key, e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500"
                             />
                           </div>
                         );
@@ -989,11 +989,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
           </div>
 
           {/* E2EE Encrypted Daily Reflection Section */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+          <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2.5">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
                   Refleksi & Catatan Harian Pribadi Siswa
                 </h3>
               </div>
@@ -1001,18 +1001,18 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
             </div>
             <textarea
               id="student-reflection-input"
-              rows={2}
+              rows={3}
               placeholder="Ceritakan perasaan, kendala, atau capaian baik yang kamu rasakan hari ini (terenkripsi E2EE aman)..."
               value={reflection}
               onChange={(e) => setReflection(e.target.value)}
-              className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none"
+              className="w-full p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs sm:text-sm lg:text-base text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none leading-relaxed"
             />
           </div>
 
           {/* Action Buttons: Submit & Reset */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-[#1E293B]/70 border border-slate-200 dark:border-slate-800 rounded-xl">
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-[#1E293B]/70 border border-slate-200 dark:border-slate-800 rounded-2xl">
+            <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+              <Sparkles className="w-4 h-4 text-indigo-500" />
               <span>
                 Jurnal tanggal <strong>{selectedDate}</strong> ({completedCount}/7 Kebiasaan Aktif)
               </span>
@@ -1023,9 +1023,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                 id="submit-student-journal-btn"
                 onClick={handleSaveJournal}
                 disabled={isSaving}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 min-h-[46px] rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-indigo-200 dark:shadow-none transition-all duration-200 active:scale-98 disabled:opacity-50"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3.5 min-h-[48px] rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm sm:text-base font-extrabold shadow-md shadow-indigo-200 dark:shadow-none transition-all duration-200 active:scale-98 disabled:opacity-50 cursor-pointer"
               >
-                <Send className="w-4 h-4" />
+                <Send className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span>{isSaving ? 'Menyimpan & Mengenkripsi...' : 'Simpan & Kirim Jurnal'}</span>
               </button>
             </div>

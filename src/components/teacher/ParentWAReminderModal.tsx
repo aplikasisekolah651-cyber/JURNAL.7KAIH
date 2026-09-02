@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   MessageCircle, 
   Copy, 
@@ -53,6 +53,7 @@ export const ParentWAReminderModal: React.FC<ParentWAReminderModalProps> = ({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('standard');
   const [customPhone, setCustomPhone] = useState<string>('');
   const [customMessage, setCustomMessage] = useState<string>('');
+  const [teacherNameInput, setTeacherNameInput] = useState<string>('');
 
   // Find parents for all students
   const studentParentMap = useMemo(() => {
@@ -92,6 +93,60 @@ export const ParentWAReminderModal: React.FC<ParentWAReminderModalProps> = ({
   const activeParent = activeStudentData?.parent;
   const latestJournal = activeStudentData?.latestJournal;
 
+  // Resolve assigned Wali Kelas for active student and class accurately
+  const studentWaliKelas = useMemo(() => {
+    const targetClassName = activeStudent?.className || className;
+    if (targetClassName && allUsers && allUsers.length > 0) {
+      const rawClass = targetClassName.trim();
+      const classNumMatch = rawClass.match(/([7-9]|vii|viii|ix)\s*([a-z])/i);
+      let normalizedCode = '';
+      if (classNumMatch) {
+        let num = classNumMatch[1].toLowerCase();
+        if (num === 'vii') num = '7';
+        if (num === 'viii') num = '8';
+        if (num === 'ix') num = '9';
+        normalizedCode = `${num}${classNumMatch[2].toLowerCase()}`;
+      } else {
+        normalizedCode = rawClass.toLowerCase().replace(/[^a-z0-9]/g, '');
+      }
+
+      const found = allUsers.find(u => {
+        if (u.role !== 'walikelas') return false;
+        if (u.assignedClassIds && u.assignedClassIds.some(cid => {
+          const cleanCid = cid.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return cleanCid.includes(normalizedCode) || normalizedCode.includes(cleanCid);
+        })) {
+          return true;
+        }
+        if (u.className) {
+          const tClass = u.className.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return tClass.includes(normalizedCode) || normalizedCode.includes(tClass);
+        }
+        return false;
+      });
+
+      if (found) return found;
+    }
+
+    if (currentTeacher && currentTeacher.role === 'walikelas') {
+      return currentTeacher;
+    }
+
+    const anyWali = allUsers.find(u => u.role === 'walikelas');
+    if (anyWali) return anyWali;
+
+    return currentTeacher;
+  }, [activeStudent, className, allUsers, currentTeacher]);
+
+  const defaultTeacherName = studentWaliKelas?.name || currentTeacher?.name || (className ? `Wali Kelas ${className}` : 'Wali Kelas');
+
+  // Synchronize teacherNameInput when default resolved wali kelas changes
+  useEffect(() => {
+    setTeacherNameInput(defaultTeacherName);
+  }, [defaultTeacherName, activeStudent?.id]);
+
+  const effectiveTeacherName = teacherNameInput.trim() || defaultTeacherName;
+
   // Phone number resolution
   const targetPhone = useMemo(() => {
     if (customPhone) return customPhone;
@@ -123,7 +178,7 @@ export const ParentWAReminderModal: React.FC<ParentWAReminderModalProps> = ({
   const messageTemplates = useMemo(() => {
     const studentName = activeStudent?.name || 'Ananda';
     const parentName = activeParent?.name || `Bapak/Ibu Orang Tua ${studentName}`;
-    const teacherName = currentTeacher?.name || 'Wali Kelas';
+    const teacherName = effectiveTeacherName;
     const classLabel = className || activeStudent?.className || '7A';
     const journalDate = latestJournal?.date || todayDateStr;
     const score = latestJournal ? `${latestJournal.overallScore}% (${latestJournal.completedCount}/7 Kebiasaan)` : 'telah terisi';
@@ -148,7 +203,7 @@ export const ParentWAReminderModal: React.FC<ParentWAReminderModalProps> = ({
         text: `*PEMBERITAHUAN TAHAP II - EVALUASI PEMBIASAAN 7 KAIH*\n*${SCHOOL_CONFIG.fullName}*\n\nYth. Bapak/Ibu ${parentName},\nWali dari *${studentName}* (${classLabel})\n\nDengan hormat,\nBerdasarkan rekapitulasi sistem pemantauan karakter kelas ${classLabel}, kami mencatat jurnal ananda *${studentName}* belum mendapatkan konfirmasi orang tua dalam beberapa hari terakhir.\n\nMohon kesediaan Bapak/Ibu untuk memeriksa dan memberikan validasi melalui portal:\n👉 *${appUrl}*\n\nApabila Bapak/Ibu mengalami kendala teknis atau memerlukan bantuan, jangan ragu untuk menghubungi kami.\n\nTerima kasih atas perhatian dan kerjasamanya.\n\nSalam hormat,\n*${teacherName}*\nWali Kelas ${classLabel}`
       }
     ];
-  }, [activeStudent, activeParent, currentTeacher, className, latestJournal, todayDateStr, appUrl]);
+  }, [activeStudent, activeParent, effectiveTeacherName, className, latestJournal, todayDateStr, appUrl]);
 
   // Selected message text
   const currentMessageText = useMemo(() => {
@@ -159,8 +214,8 @@ export const ParentWAReminderModal: React.FC<ParentWAReminderModalProps> = ({
 
   // Broadcast text for class WhatsApp group
   const broadcastGroupText = useMemo(() => {
-    const teacherName = currentTeacher?.name || 'Wali Kelas';
-    const classLabel = className || '7A';
+    const teacherName = effectiveTeacherName;
+    const classLabel = className || activeStudent?.className || '7A';
     const totalCount = allStudents.length;
     const validatedCount = allStudents.length - pendingStudents.length;
 
@@ -176,7 +231,7 @@ export const ParentWAReminderModal: React.FC<ParentWAReminderModalProps> = ({
     }
 
     return `*REKAPITULASI JURNAL 7 KAIH KELAS ${classLabel}*\n*${SCHOOL_CONFIG.fullName}*\nTanggal: ${todayDateStr}\n\n_Assalamu'alaikum Warahmatullahi Wabarakatuh / Selamat Malam Bapak/Ibu Paguyuban Orang Tua Kelas ${classLabel}._\n\nBerikut kami sampaikan pembaruan status validasi Jurnal 7 Kebiasaan Anak Indonesia Hebat (7 KAIH) hari ini:\n\n📊 *Statistik Kelas:*\n• Total Siswa: ${totalCount} Siswa\n• Sudah Dikonfirmasi Ortu: ${validatedCount} Siswa (${totalCount > 0 ? Math.round((validatedCount/totalCount)*100) : 0}%)\n• Belum Dikonfirmasi Ortu: ${pendingStudents.length} Siswa\n\n📋 *Daftar Ananda yang Menunggu Konfirmasi Orang Tua:*\n${unconfirmedList}\n\nBagi Bapak/Ibu yang putera/puterinya tertera di atas, mohon kesediaannya meluangkan waktu 1-2 menit untuk membuka aplikasi dan memvalidasi kebiasaan ananda:\n👉 *${appUrl}*\n\nTerima kasih setulusnya atas bimbingan dan pendampingan tiada henti Bapak/Ibu di rumah.\n\nSalam hormat,\n*${teacherName}*\nWali Kelas ${classLabel}\n${SCHOOL_CONFIG.name}`;
-  }, [allStudents, pendingStudents, studentParentMap, currentTeacher, className, todayDateStr, appUrl]);
+  }, [allStudents, pendingStudents, studentParentMap, effectiveTeacherName, className, activeStudent, todayDateStr, appUrl]);
 
   // Copy to clipboard helper
   const handleCopyText = (text: string, key: string) => {
@@ -391,19 +446,36 @@ export const ParentWAReminderModal: React.FC<ParentWAReminderModalProps> = ({
                   </div>
                 </div>
 
-                {/* Edit Phone if Needed */}
-                <div className="flex items-center gap-2">
-                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 shrink-0 flex items-center gap-1">
-                    <Phone className="w-3 h-3 text-slate-400" />
-                    Nomor WhatsApp:
-                  </label>
-                  <input
-                    type="text"
-                    value={customPhone || targetPhone}
-                    onChange={(e) => setCustomPhone(e.target.value)}
-                    placeholder="Contoh: 081234567890"
-                    className="flex-1 px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500 font-mono"
-                  />
+                {/* Edit Phone and Sender Wali Kelas */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 shrink-0 flex items-center gap-1">
+                      <Phone className="w-3 h-3 text-slate-400" />
+                      Nomor WA:
+                    </label>
+                    <input
+                      type="text"
+                      value={customPhone || targetPhone}
+                      onChange={(e) => setCustomPhone(e.target.value)}
+                      placeholder="Contoh: 081234567890"
+                      className="w-full px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 shrink-0 flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5 text-emerald-500" />
+                      Wali Kelas:
+                    </label>
+                    <input
+                      type="text"
+                      value={teacherNameInput}
+                      onChange={(e) => setTeacherNameInput(e.target.value)}
+                      placeholder="Nama Wali Kelas"
+                      className="w-full px-2.5 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500 font-medium"
+                      title="Nama wali kelas otomatis terisi sesuai data wali kelas yang terdaftar, atau dapat Anda sesuaikan"
+                    />
+                  </div>
                 </div>
 
                 {/* Message Text Area */}
@@ -493,6 +565,22 @@ export const ParentWAReminderModal: React.FC<ParentWAReminderModalProps> = ({
                     {pendingStudents.length} Siswa
                   </p>
                 </div>
+              </div>
+
+              {/* Sender Wali Kelas Control */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 text-xs sm:text-sm">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Pengirim (Wali Kelas):</span>
+                </div>
+                <input
+                  type="text"
+                  value={teacherNameInput}
+                  onChange={(e) => setTeacherNameInput(e.target.value)}
+                  placeholder="Nama Wali Kelas"
+                  className="px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500 font-medium sm:w-72"
+                  title="Nama wali kelas otomatis terisi sesuai data wali kelas yang terdaftar, atau dapat Anda sesuaikan"
+                />
               </div>
 
               {/* Broadcast Preview Box */}

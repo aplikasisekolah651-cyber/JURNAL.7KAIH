@@ -42,6 +42,7 @@ import {
 } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
+import { useSchoolSettings } from '../../context/SchoolContext';
 import { DEMO_CLASSES, HABIT_LIST, KATEGORI_CONFIG, SCHOOL_CONFIG } from '../../lib/constants';
 import { HabitId, HabitKategoriLevel, User, JournalEntry } from '../../types';
 import { HabitIcon } from '../common/HabitIcon';
@@ -53,6 +54,7 @@ import { ParentWAReminderModal } from './ParentWAReminderModal';
 
 export const TeacherDashboard: React.FC = () => {
   const { currentUser, allUsers } = useAuth();
+  const { schoolSettings } = useSchoolSettings();
   const { 
     journals, 
     getClassAnalysis, 
@@ -211,12 +213,16 @@ export const TeacherDashboard: React.FC = () => {
     const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const currentMonth = monthNames[new Date().getMonth()] + ' ' + new Date().getFullYear();
     const currentClassObj = DEMO_CLASSES.find(c => c.id === selectedClassId);
+    const clsName = currentClassObj ? currentClassObj.name : '7A';
+    const teacherLookup = PDFReportGenerator.getTeacherForClass(clsName, allUsers) || { name: currentUser.name, nip: currentUser.nip };
     PDFReportGenerator.generateClassReport(
-      currentClassObj ? currentClassObj.name : '7A',
-      currentUser.name,
+      clsName,
+      teacherLookup.name,
       currentMonth,
       classAnalysis,
-      studentRows
+      studentRows,
+      schoolSettings,
+      teacherLookup.nip
     );
   };
 
@@ -225,7 +231,15 @@ export const TeacherDashboard: React.FC = () => {
     const sJournals = getStudentJournals(student.id);
     const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const currentMonth = monthNames[new Date().getMonth()] + ' ' + new Date().getFullYear();
-    PDFReportGenerator.generateStudentReport(student, sJournals, currentMonth, teacherNoteInput);
+    const teacherLookup = PDFReportGenerator.getTeacherForClass(student.className, allUsers) || { name: currentUser.name, nip: currentUser.nip };
+    PDFReportGenerator.generateStudentReport(
+      student,
+      sJournals,
+      currentMonth,
+      teacherNoteInput,
+      schoolSettings,
+      teacherLookup
+    );
   };
 
   // Submit Feedback Handler

@@ -95,7 +95,7 @@ export const Header: React.FC<HeaderProps> = ({ onSelectDate }) => {
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#0F172A]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors shadow-xs">
-      <div className="max-w-7xl mx-auto px-3 sm:px-5 lg:px-6">
+      <div className="w-full mx-auto px-3 sm:px-6 lg:px-8 xl:px-10">
         <div className="flex items-center justify-between h-14 gap-2.5">
           {/* Brand Logo & Title */}
           <div className="flex items-center gap-2.5 min-w-0">

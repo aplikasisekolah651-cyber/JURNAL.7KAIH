@@ -124,12 +124,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
   // Export Individual Student PDF
   const handlePrintIndividualPDF = (targetStudent: User) => {
     const sJournals = getStudentJournals(targetStudent.id);
-    const studentTeacher = teachers.find(t => {
-      if (!targetStudent.className) return false;
-      const cleanStudentClass = targetStudent.className.replace(/\s+/g, '').toLowerCase();
-      const cleanTeacherClass = (t.className || '').replace(/\s+/g, '').toLowerCase();
-      return cleanTeacherClass.includes(cleanStudentClass) || t.assignedClassIds?.includes(targetStudent.classId || '');
-    });
+    const studentTeacher = PDFReportGenerator.getTeacherForClass(targetStudent.className, allUsers);
 
     setIsExporting(true);
     try {
@@ -139,7 +134,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
         selectedMonth,
         customTeacherNote || undefined,
         schoolSettings,
-        studentTeacher ? { name: studentTeacher.name, nip: studentTeacher.nip } : undefined
+        studentTeacher
       );
       audioNotifier.playSuccessChime();
     } catch (err) {
@@ -156,8 +151,12 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
   }, [students, selectedClassForCollect]);
 
   const classTeacher = useMemo(() => {
-    const teacher = teachers.find(t => t.className?.includes(selectedClassForCollect));
-    return teacher?.name || 'Wali Kelas ' + selectedClassForCollect;
+    const teacher = teachers.find(t => {
+      const cleanTargetClass = selectedClassForCollect.replace(/\s+/g, '').toLowerCase();
+      const cleanTeacherClass = (t.className || '').replace(/\s+/g, '').toLowerCase();
+      return cleanTeacherClass.includes(cleanTargetClass);
+    });
+    return teacher ? `${teacher.name}${teacher.nip ? ` (NIP: ${teacher.nip})` : ''}` : 'Wali Kelas ' + selectedClassForCollect;
   }, [teachers, selectedClassForCollect]);
 
   const classAnalysis = useMemo(() => {
@@ -195,11 +194,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
     const targetStudents = students.filter(s => s.className === targetClass);
     const targetStudentIds = targetStudents.map(s => s.id);
     const targetAnalysis = getClassAnalysis(targetClass, targetStudentIds);
-    const targetTeacherObj = teachers.find(t => {
-      const cleanTargetClass = targetClass.replace(/\s+/g, '').toLowerCase();
-      const cleanTeacherClass = (t.className || '').replace(/\s+/g, '').toLowerCase();
-      return cleanTeacherClass.includes(cleanTargetClass);
-    });
+    const targetTeacherObj = PDFReportGenerator.getTeacherForClass(targetClass, allUsers);
     const targetTeacher = targetTeacherObj?.name || `Wali Kelas ${targetClass}`;
     const targetTeacherNip = targetTeacherObj?.nip;
 

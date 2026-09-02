@@ -49,6 +49,7 @@ import {
 } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
+import { useSchoolSettings } from '../../context/SchoolContext';
 import { HABIT_LIST, KATEGORI_CONFIG } from '../../lib/constants';
 import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
@@ -60,6 +61,7 @@ import { UserAvatar } from '../common/UserAvatar';
 
 export const ParentDashboard: React.FC = () => {
   const { currentUser, allUsers } = useAuth();
+  const { schoolSettings } = useSchoolSettings();
   const { 
     journals, 
     getStudentJournals, 
@@ -196,7 +198,17 @@ export const ParentDashboard: React.FC = () => {
     if (!currentStudent) return;
     const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const currentMonth = monthNames[new Date().getMonth()] + ' ' + new Date().getFullYear();
-    PDFReportGenerator.generateStudentReport(currentStudent, studentEntries, currentMonth);
+
+    const studentTeacher = PDFReportGenerator.getTeacherForClass(currentStudent.className, allUsers);
+
+    PDFReportGenerator.generateStudentReport(
+      currentStudent,
+      studentEntries,
+      currentMonth,
+      undefined,
+      schoolSettings,
+      studentTeacher
+    );
   };
 
   return (

@@ -283,13 +283,17 @@ export const AdminJournalMonitoring: React.FC = () => {
       createdAt: new Date().toISOString()
     };
 
+    const studentClass = studentUser.className || journal.className;
+    const studentTeacher = PDFReportGenerator.getTeacherForClass(studentClass, allUsers);
+
     const sJournals = journals.filter(j => j.studentId === journal.studentId);
     PDFReportGenerator.generateStudentReport(
       studentUser,
       sJournals,
       journal.date.substring(0, 7),
       undefined,
-      schoolSettings
+      schoolSettings,
+      studentTeacher
     );
   };
 
