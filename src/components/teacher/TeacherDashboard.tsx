@@ -51,10 +51,20 @@ import { PDFReportGenerator } from '../../lib/pdfGenerator';
 import { audioNotifier } from '../../lib/audioNotifier';
 import { UserAvatar } from '../common/UserAvatar';
 import { ParentWAReminderModal } from './ParentWAReminderModal';
+import { useNavigation } from '../../context/NavigationContext';
 
 export const TeacherDashboard: React.FC = () => {
   const { currentUser, allUsers } = useAuth();
   const { schoolSettings } = useSchoolSettings();
+  const { currentPath, navigate } = useNavigation();
+
+  useEffect(() => {
+    document.title = 'Dashboard Rekapitulasi Wali Kelas - Jurnal 7 KAIH';
+    if (!currentPath.startsWith('/guru')) {
+      navigate('/guru', { replace: true });
+    }
+  }, [currentPath, navigate]);
+
   const { 
     journals, 
     getClassAnalysis, 

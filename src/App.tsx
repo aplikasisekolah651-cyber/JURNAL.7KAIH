@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { SchoolProvider, useSchoolSettings } from './context/SchoolContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { JournalProvider, useJournal } from './context/JournalContext';
+import { NavigationProvider, useNavigation } from './context/NavigationContext';
 import { Header } from './components/common/Header';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { StudentDashboard } from './components/student/StudentDashboard';
@@ -17,7 +18,32 @@ const MainLayout: React.FC = () => {
   const { currentUser, isAuthenticated } = useAuth();
   const { activeReminderHabit, dismissReminder } = useJournal();
   const { schoolSettings } = useSchoolSettings();
+  const { currentPath, navigate } = useNavigation();
   const [selectedStudentDate, setSelectedStudentDate] = useState<string | undefined>(undefined);
+
+  // Sync initial URL on auth state changes
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) {
+      if (!currentPath.startsWith('/login') && currentPath !== '/') {
+        navigate('/login', { replace: true });
+      }
+      document.title = `Login - Jurnal 7 KAIH ${schoolSettings.name}`;
+      return;
+    }
+
+    // Role-based root or login redirect
+    if (currentPath === '/' || currentPath === '/login' || currentPath === '') {
+      if (currentUser.role === 'siswa') {
+        navigate('/siswa/jurnal', { replace: true });
+      } else if (currentUser.role === 'orangtua') {
+        navigate('/orangtua/validasi', { replace: true });
+      } else if (currentUser.role === 'walikelas') {
+        navigate('/guru', { replace: true });
+      } else if (currentUser.role === 'admin') {
+        navigate('/admin/ringkasan', { replace: true });
+      }
+    }
+  }, [isAuthenticated, currentUser?.role, currentPath, navigate, schoolSettings.name]);
 
   if (!isAuthenticated || !currentUser) {
     return <LoginScreen />;
@@ -108,7 +134,9 @@ export default function App() {
       <SchoolProvider>
         <AuthProvider>
           <JournalProvider>
-            <MainLayout />
+            <NavigationProvider>
+              <MainLayout />
+            </NavigationProvider>
           </JournalProvider>
         </AuthProvider>
       </SchoolProvider>

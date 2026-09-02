@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigation } from '../../context/NavigationContext';
 import { 
   Shield, 
   Users, 
@@ -116,9 +117,95 @@ export const AdminDashboard: React.FC = () => {
   const excelFileInputRef = React.useRef<HTMLInputElement>(null);
   const [selectedFileName, setSelectedFileName] = useState<string>('');
 
-  // Sidebar Menu State
-  const [activeMenu, setActiveMenu] = useState<AdminMenuKey>('overview');
+  // URL Navigation Mapping
+  const { currentPath, navigate } = useNavigation();
+
+  const menuToPath = (menu: AdminMenuKey): string => {
+    switch (menu) {
+      case 'overview': return '/admin/ringkasan';
+      case 'students': return '/admin/siswa';
+      case 'parents': return '/admin/orangtua';
+      case 'teachers': return '/admin/guru';
+      case 'journals': return '/admin/jurnal';
+      case 'reports': return '/admin/laporan';
+      case 'import': return '/admin/import';
+      case 'credentials': return '/admin/kredensial';
+      case 'settings': return '/admin/pengaturan';
+      case 'database': return '/admin/database';
+      default: return '/admin/ringkasan';
+    }
+  };
+
+  const pathToMenu = (path: string): AdminMenuKey => {
+    if (path.includes('/admin/siswa') || path.includes('/admin/students')) return 'students';
+    if (path.includes('/admin/orangtua') || path.includes('/admin/parents')) return 'parents';
+    if (path.includes('/admin/guru') || path.includes('/admin/teachers') || path.includes('/admin/walikelas')) return 'teachers';
+    if (path.includes('/admin/jurnal') || path.includes('/admin/journals')) return 'journals';
+    if (path.includes('/admin/laporan') || path.includes('/admin/reports') || path.includes('/admin/raport')) return 'reports';
+    if (path.includes('/admin/import')) return 'import';
+    if (path.includes('/admin/kredensial') || path.includes('/admin/akun') || path.includes('/admin/credentials')) return 'credentials';
+    if (path.includes('/admin/pengaturan') || path.includes('/admin/settings')) return 'settings';
+    if (path.includes('/admin/database') || path.includes('/admin/db')) return 'database';
+    return 'overview';
+  };
+
+  // Sidebar Menu State initialized from URL
+  const [activeMenu, setActiveMenu] = useState<AdminMenuKey>(() => {
+    if (typeof window !== 'undefined') {
+      return pathToMenu(window.location.pathname);
+    }
+    return 'overview';
+  });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Sync menu and document title on URL change
+  useEffect(() => {
+    const targetMenu = pathToMenu(currentPath);
+    if (targetMenu !== activeMenu) {
+      setActiveMenu(targetMenu);
+    }
+
+    // Dynamic document title based on selected menu
+    switch (targetMenu) {
+      case 'overview':
+        document.title = 'Ringkasan & Statistik - Admin Jurnal 7 KAIH';
+        break;
+      case 'students':
+        document.title = 'Manajemen Data Siswa - Admin Jurnal 7 KAIH';
+        break;
+      case 'parents':
+        document.title = 'Manajemen Data Orang Tua - Admin Jurnal 7 KAIH';
+        break;
+      case 'teachers':
+        document.title = 'Manajemen Guru & Wali Kelas - Admin Jurnal 7 KAIH';
+        break;
+      case 'journals':
+        document.title = 'Monitoring Jurnal 7 KAIH - Admin';
+        break;
+      case 'reports':
+        document.title = 'Laporan & Raport Karakter - Admin Jurnal 7 KAIH';
+        break;
+      case 'import':
+        document.title = 'Impor Data Siswa Excel - Admin Jurnal 7 KAIH';
+        break;
+      case 'credentials':
+        document.title = 'Cetak & Distribusi Akun - Admin Jurnal 7 KAIH';
+        break;
+      case 'settings':
+        document.title = 'Pengaturan Identitas Sekolah - Admin Jurnal 7 KAIH';
+        break;
+      case 'database':
+        document.title = 'Cadangan & Kelola Database - Admin Jurnal 7 KAIH';
+        break;
+    }
+  }, [currentPath]);
+
+  // Handler for menu selection with URL update
+  const handleSelectMenu = (menu: AdminMenuKey) => {
+    setActiveMenu(menu);
+    setMobileSidebarOpen(false);
+    navigate(menuToPath(menu));
+  };
 
   // Student Filter & Pagination & Bulk Selection States
   const [selectedClass, setSelectedClass] = useState<string>('all');
@@ -1131,8 +1218,8 @@ export const AdminDashboard: React.FC = () => {
           {/* Nav List */}
           <nav className="space-y-1">
             <button
-              onClick={() => { setActiveMenu('overview'); setMobileSidebarOpen(false); }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              onClick={() => handleSelectMenu('overview')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeMenu === 'overview'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1150,8 +1237,8 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => { setActiveMenu('students'); setMobileSidebarOpen(false); }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              onClick={() => handleSelectMenu('students')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeMenu === 'students'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1169,8 +1256,8 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => { setActiveMenu('parents'); setMobileSidebarOpen(false); }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              onClick={() => handleSelectMenu('parents')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeMenu === 'parents'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1188,8 +1275,8 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => { setActiveMenu('teachers'); setMobileSidebarOpen(false); }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              onClick={() => handleSelectMenu('teachers')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeMenu === 'teachers'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1207,8 +1294,8 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => { setActiveMenu('journals'); setMobileSidebarOpen(false); }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              onClick={() => handleSelectMenu('journals')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeMenu === 'journals'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1226,8 +1313,8 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => { setActiveMenu('reports'); setMobileSidebarOpen(false); }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              onClick={() => handleSelectMenu('reports')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeMenu === 'reports'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1248,8 +1335,8 @@ export const AdminDashboard: React.FC = () => {
               </span>
 
               <button
-                onClick={() => { setActiveMenu('import'); setMobileSidebarOpen(false); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                onClick={() => handleSelectMenu('import')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeMenu === 'import'
                     ? 'bg-purple-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1260,8 +1347,8 @@ export const AdminDashboard: React.FC = () => {
               </button>
 
               <button
-                onClick={() => { setActiveMenu('credentials'); setMobileSidebarOpen(false); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                onClick={() => handleSelectMenu('credentials')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeMenu === 'credentials'
                     ? 'bg-purple-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1272,8 +1359,8 @@ export const AdminDashboard: React.FC = () => {
               </button>
 
               <button
-                onClick={() => { setActiveMenu('settings'); setMobileSidebarOpen(false); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                onClick={() => handleSelectMenu('settings')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeMenu === 'settings'
                     ? 'bg-purple-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1284,8 +1371,8 @@ export const AdminDashboard: React.FC = () => {
               </button>
 
               <button
-                onClick={() => { setActiveMenu('database'); setMobileSidebarOpen(false); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                onClick={() => handleSelectMenu('database')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeMenu === 'database'
                     ? 'bg-purple-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1338,21 +1425,21 @@ export const AdminDashboard: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => handleOpenAddModal('siswa')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-xs transition-all active:scale-95"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
                     <span>Tambah Siswa</span>
                   </button>
                   <button
-                    onClick={() => setActiveMenu('reports')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all shadow-xs active:scale-95"
+                    onClick={() => handleSelectMenu('reports')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5" />
                     <span>Cetak Laporan</span>
                   </button>
                   <button
-                    onClick={() => setActiveMenu('import')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md border border-white/20 transition-all shadow-xs active:scale-95"
+                    onClick={() => handleSelectMenu('import')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md border border-white/20 transition-all shadow-xs active:scale-95 cursor-pointer"
                   >
                     <Upload className="w-3.5 h-3.5 text-purple-300" />
                     <span>Impor XLS / CSV</span>
@@ -1363,7 +1450,7 @@ export const AdminDashboard: React.FC = () => {
               {/* 5 Stats Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-5 pt-4 border-t border-white/10">
                 <div 
-                  onClick={() => setActiveMenu('students')} 
+                  onClick={() => handleSelectMenu('students')} 
                   className="bg-blue-950/40 hover:bg-blue-950/60 cursor-pointer backdrop-blur-md rounded-xl p-3 border border-blue-500/30 transition-all"
                 >
                   <span className="text-[10px] text-blue-200 font-semibold flex items-center justify-between">
@@ -1375,7 +1462,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div 
-                  onClick={() => setActiveMenu('parents')} 
+                  onClick={() => handleSelectMenu('parents')} 
                   className="bg-rose-950/40 hover:bg-rose-950/60 cursor-pointer backdrop-blur-md rounded-xl p-3 border border-rose-500/30 transition-all"
                 >
                   <span className="text-[10px] text-rose-200 font-semibold flex items-center justify-between">
@@ -1387,7 +1474,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div 
-                  onClick={() => setActiveMenu('teachers')} 
+                  onClick={() => handleSelectMenu('teachers')} 
                   className="bg-emerald-950/40 hover:bg-emerald-950/60 cursor-pointer backdrop-blur-md rounded-xl p-3 border border-emerald-500/30 transition-all"
                 >
                   <span className="text-[10px] text-emerald-200 font-semibold flex items-center justify-between">
@@ -1399,7 +1486,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div 
-                  onClick={() => setActiveMenu('journals')} 
+                  onClick={() => handleSelectMenu('journals')} 
                   className="bg-indigo-950/40 hover:bg-indigo-950/60 cursor-pointer backdrop-blur-md rounded-xl p-3 border border-indigo-500/30 transition-all"
                 >
                   <span className="text-[10px] text-indigo-200 font-semibold flex items-center justify-between">
@@ -1411,7 +1498,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div 
-                  onClick={() => setActiveMenu('credentials')} 
+                  onClick={() => handleSelectMenu('credentials')} 
                   className="bg-purple-950/40 hover:bg-purple-950/60 cursor-pointer backdrop-blur-md rounded-xl p-3 border border-purple-500/30 transition-all"
                 >
                   <span className="text-[10px] text-purple-200 font-semibold flex items-center justify-between">
@@ -2551,7 +2638,7 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
                   <button
-                    onClick={() => setActiveMenu('credentials')}
+                    onClick={() => handleSelectMenu('credentials')}
                     className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 shadow-xs transition-all shrink-0 cursor-pointer"
                   >
                     Buka Tab Kredensial & Kartu

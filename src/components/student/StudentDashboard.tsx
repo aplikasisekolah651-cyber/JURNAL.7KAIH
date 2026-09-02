@@ -38,6 +38,7 @@ import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
 import { audioNotifier } from '../../lib/audioNotifier';
 import { UserAvatar } from '../common/UserAvatar';
+import { useNavigation } from '../../context/NavigationContext';
 
 interface StudentDashboardProps {
   initialDate?: string;
@@ -51,11 +52,43 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
     getStudentStats, 
     saveJournalEntry 
   } = useJournal();
+  const { currentPath, navigate } = useNavigation();
 
   const todayStr = new Date().toISOString().split('T')[0];
   const [selectedDate, setSelectedDate] = useState<string>(initialDate || todayStr);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'form' | 'analytics' | 'history'>('form');
+
+  // Initialize active tab from current URL
+  const [activeTab, setActiveTab] = useState<'form' | 'analytics' | 'history'>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path.includes('/siswa/analisis') || path.includes('/siswa/analytics')) return 'analytics';
+      if (path.includes('/siswa/riwayat') || path.includes('/siswa/history')) return 'history';
+    }
+    return 'form';
+  });
+
+  // Sync tab when URL / browser navigation changes
+  useEffect(() => {
+    if (currentPath.includes('/siswa/analisis') || currentPath.includes('/siswa/analytics')) {
+      setActiveTab('analytics');
+      document.title = 'Grafik & Analisis Karakter - Jurnal 7 KAIH';
+    } else if (currentPath.includes('/siswa/riwayat') || currentPath.includes('/siswa/history')) {
+      setActiveTab('history');
+      document.title = 'Riwayat Jurnal Siswa - Jurnal 7 KAIH';
+    } else if (currentPath.includes('/siswa/jurnal') || currentPath === '/siswa') {
+      setActiveTab('form');
+      document.title = 'Pengisian Jurnal 7 KAIH - Siswa';
+    }
+  }, [currentPath]);
+
+  // Tab click handler with URL update
+  const handleSelectTab = (tab: 'form' | 'analytics' | 'history') => {
+    setActiveTab(tab);
+    if (tab === 'form') navigate('/siswa/jurnal');
+    else if (tab === 'analytics') navigate('/siswa/analisis');
+    else if (tab === 'history') navigate('/siswa/riwayat');
+  };
 
   // Form State for the selected date
   const [habitsData, setHabitsData] = useState<Record<HabitId, HabitItemData>>(() => {
@@ -266,8 +299,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           <button
             id="tab-student-form"
-            onClick={() => setActiveTab('form')}
-            className={`px-4 py-2.5 min-h-[42px] rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
+            onClick={() => handleSelectTab('form')}
+            className={`px-4 py-2.5 min-h-[42px] rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer ${
               activeTab === 'form'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -277,8 +310,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
           </button>
           <button
             id="tab-student-analytics"
-            onClick={() => setActiveTab('analytics')}
-            className={`px-4 py-2.5 min-h-[42px] rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
+            onClick={() => handleSelectTab('analytics')}
+            className={`px-4 py-2.5 min-h-[42px] rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer ${
               activeTab === 'analytics'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -288,8 +321,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
           </button>
           <button
             id="tab-student-history"
-            onClick={() => setActiveTab('history')}
-            className={`px-4 py-2.5 min-h-[42px] rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
+            onClick={() => handleSelectTab('history')}
+            className={`px-4 py-2.5 min-h-[42px] rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer ${
               activeTab === 'history'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'

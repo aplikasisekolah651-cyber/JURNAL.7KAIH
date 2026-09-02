@@ -29,6 +29,7 @@ import { ReminderModal } from './ReminderModal';
 import { E2EEBadge } from './E2EEBadge';
 import { ProfileModal } from '../profile/ProfileModal';
 import { ChangePasswordModal } from '../profile/ChangePasswordModal';
+import { useNavigation } from '../../context/NavigationContext';
 
 interface HeaderProps {
   onSelectDate?: (date: string) => void;
@@ -39,6 +40,15 @@ export const Header: React.FC<HeaderProps> = ({ onSelectDate }) => {
   const { theme, toggleTheme } = useTheme();
   const { unreadNotificationCount } = useJournal();
   const { schoolSettings } = useSchoolSettings();
+  const { navigate } = useNavigation();
+
+  const handleLogoClick = () => {
+    if (!currentUser) return;
+    if (currentUser.role === 'siswa') navigate('/siswa/jurnal');
+    else if (currentUser.role === 'orangtua') navigate('/orangtua/validasi');
+    else if (currentUser.role === 'walikelas') navigate('/guru');
+    else if (currentUser.role === 'admin') navigate('/admin/ringkasan');
+  };
   
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
@@ -98,7 +108,11 @@ export const Header: React.FC<HeaderProps> = ({ onSelectDate }) => {
       <div className="w-full mx-auto px-3 sm:px-6 lg:px-8 xl:px-10">
         <div className="flex items-center justify-between h-14 gap-2.5">
           {/* Brand Logo & Title */}
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div 
+            onClick={handleLogoClick}
+            className="flex items-center gap-2.5 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
+            title="Kembali ke Beranda"
+          >
             <SchoolLogo className="w-8 h-8 shrink-0 drop-shadow-xs" />
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">

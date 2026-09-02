@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Heart, 
   CheckCircle2, 
@@ -51,6 +51,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
+import { useNavigation } from '../../context/NavigationContext';
 import { HABIT_LIST, KATEGORI_CONFIG, getReligionConfig, ReligionType } from '../../lib/constants';
 import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
@@ -71,9 +72,39 @@ export const ParentDashboard: React.FC = () => {
     verifyHabitByParent,
     batchVerifyHabitsByParent
   } = useJournal();
+  const { currentPath, navigate } = useNavigation();
 
-  // Active Tab: 'validation' (Daily 7 KAIH Review) vs 'progress' (Child Progress & Analytics) vs 'history' (Past Logs)
-  const [activeTab, setActiveTab] = useState<'validation' | 'progress' | 'history'>('validation');
+  // Initialize active tab from current URL
+  const [activeTab, setActiveTab] = useState<'validation' | 'progress' | 'history'>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path.includes('/orangtua/progress') || path.includes('/orangtua/analisis')) return 'progress';
+      if (path.includes('/orangtua/riwayat') || path.includes('/orangtua/history')) return 'history';
+    }
+    return 'validation';
+  });
+
+  // Sync tab when URL / browser navigation changes
+  useEffect(() => {
+    if (currentPath.includes('/orangtua/progress') || currentPath.includes('/orangtua/analisis')) {
+      setActiveTab('progress');
+      document.title = 'Perkembangan Karakter Ananda - Orang Tua';
+    } else if (currentPath.includes('/orangtua/riwayat') || currentPath.includes('/orangtua/history')) {
+      setActiveTab('history');
+      document.title = 'Riwayat Jurnal Ananda - Orang Tua';
+    } else if (currentPath.includes('/orangtua/validasi') || currentPath === '/orangtua') {
+      setActiveTab('validation');
+      document.title = 'Konfirmasi Jurnal 7 KAIH - Orang Tua';
+    }
+  }, [currentPath]);
+
+  // Tab click handler with URL update
+  const handleSelectTab = (tab: 'validation' | 'progress' | 'history') => {
+    setActiveTab(tab);
+    if (tab === 'validation') navigate('/orangtua/validasi');
+    else if (tab === 'progress') navigate('/orangtua/progress');
+    else if (tab === 'history') navigate('/orangtua/riwayat');
+  };
 
   // Find students linked to this parent
   const linkedStudents = allUsers.filter(u => 
@@ -346,7 +377,7 @@ export const ParentDashboard: React.FC = () => {
       {/* Main Navigation Tabs */}
       <div className="flex items-center gap-2.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none border-b border-slate-200 dark:border-slate-800 pb-3">
         <button
-          onClick={() => setActiveTab('validation')}
+          onClick={() => handleSelectTab('validation')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'validation'
               ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-400/30'
@@ -358,7 +389,7 @@ export const ParentDashboard: React.FC = () => {
         </button>
 
         <button
-          onClick={() => setActiveTab('progress')}
+          onClick={() => handleSelectTab('progress')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'progress'
               ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400/30'
@@ -370,7 +401,7 @@ export const ParentDashboard: React.FC = () => {
         </button>
 
         <button
-          onClick={() => setActiveTab('history')}
+          onClick={() => handleSelectTab('history')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'history'
               ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-400/30'
