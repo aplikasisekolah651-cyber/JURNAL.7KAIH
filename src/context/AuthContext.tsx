@@ -46,7 +46,32 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const USERS_STORAGE_KEY = '7kaih_users_v1';
+const DELETED_USERS_STORAGE_KEY = '7kaih_deleted_users_v1';
 const AUTH_SESSION_KEY = '7kaih_auth_session_v1';
+
+export const getDeletedUserIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(DELETED_USERS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return new Set(parsed);
+    }
+  } catch (e) {
+    console.warn('Error reading deleted users:', e);
+  }
+  return new Set();
+};
+
+export const markUsersAsDeleted = (ids: string | string[]) => {
+  try {
+    const existing = getDeletedUserIds();
+    const idList = Array.isArray(ids) ? ids : [ids];
+    idList.forEach(id => existing.add(id));
+    localStorage.setItem(DELETED_USERS_STORAGE_KEY, JSON.stringify(Array.from(existing)));
+  } catch (e) {
+    console.warn('Error marking users as deleted:', e);
+  }
+};
 
 export const normalizeClassName = (cn?: string): string => {
   if (!cn) return '7A';
@@ -66,26 +91,31 @@ export const normalizeClassCode = (cn?: string): string => {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [allUsers, setAllUsers] = useState<User[]>(() => {
+    const deletedIds = getDeletedUserIds();
     const saved = localStorage.getItem(USERS_STORAGE_KEY);
     if (saved) {
       try {
         const parsed: User[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map(u => ({
-            ...u,
-            className: u.className ? normalizeClassName(u.className) : u.className,
-            avatar: getUserAvatarUrl(u)
-          }));
+          return parsed
+            .filter(u => !deletedIds.has(u.id))
+            .map(u => ({
+              ...u,
+              className: u.className ? normalizeClassName(u.className) : u.className,
+              avatar: getUserAvatarUrl(u)
+            }));
         }
       } catch (e) {
         console.error('Failed to parse cached users:', e);
       }
     }
-    return DEMO_USERS.map(u => ({
-      ...u,
-      className: u.className ? normalizeClassName(u.className) : u.className,
-      avatar: getUserAvatarUrl(u)
-    }));
+    return DEMO_USERS
+      .filter(u => !deletedIds.has(u.id))
+      .map(u => ({
+        ...u,
+        className: u.className ? normalizeClassName(u.className) : u.className,
+        avatar: getUserAvatarUrl(u)
+      }));
   });
 
   const [currentUser, setCurrentUserState] = useState<User>(() => {
@@ -114,33 +144,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Helper to safely merge remote users from Firestore with local state
   const mergeFirestoreUsers = (prevUsers: User[], firestoreUsers: User[]): User[] => {
+    const deletedIds = getDeletedUserIds();
     const map = new Map<string, User>();
     
-    // 1. Put demo admin and teachers as safety fallbacks
-    DEMO_USERS.filter(u => u.role === 'admin' || u.role === 'walikelas').forEach(u => {
-      map.set(u.id, {
-        ...u,
-        avatar: getUserAvatarUrl(u)
+    // 1. Put demo admin and teachers as safety fallbacks only if not deleted
+    DEMO_USERS
+      .filter(u => (u.role === 'admin' || u.role === 'walikelas') && !deletedIds.has(u.id))
+      .forEach(u => {
+        map.set(u.id, {
+          ...u,
+          avatar: getUserAvatarUrl(u)
+        });
       });
-    });
 
-    // 2. Put existing local users
-    prevUsers.forEach(u => {
-      map.set(u.id, {
-        ...u,
-        className: u.className ? normalizeClassName(u.className) : u.className,
-        avatar: getUserAvatarUrl(u)
+    // 2. Put existing local non-deleted users
+    prevUsers
+      .filter(u => !deletedIds.has(u.id))
+      .forEach(u => {
+        map.set(u.id, {
+          ...u,
+          className: u.className ? normalizeClassName(u.className) : u.className,
+          avatar: getUserAvatarUrl(u)
+        });
       });
-    });
 
-    // 3. Put remote firestore users (Cloud is the authoritative source of truth)
-    firestoreUsers.forEach(u => {
-      map.set(u.id, {
-        ...u,
-        className: u.className ? normalizeClassName(u.className) : u.className,
-        avatar: getUserAvatarUrl(u)
+    // 3. Put remote firestore users (Cloud is authoritative) only if not deleted
+    firestoreUsers
+      .filter(u => !deletedIds.has(u.id))
+      .forEach(u => {
+        map.set(u.id, {
+          ...u,
+          className: u.className ? normalizeClassName(u.className) : u.className,
+          avatar: getUserAvatarUrl(u)
+        });
       });
-    });
 
     return Array.from(map.values());
   };
@@ -149,8 +186,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const seedDemoUsersToFirestore = async () => {
     if (!db) return;
     try {
+      const deletedIds = getDeletedUserIds();
+      const nonDeletedDemoUsers = DEMO_USERS.filter(u => !deletedIds.has(u.id));
+      if (nonDeletedDemoUsers.length === 0) return;
+
       const batch = writeBatch(db);
-      DEMO_USERS.forEach(u => {
+      nonDeletedDemoUsers.forEach(u => {
         batch.set(doc(db, 'users', u.id), cleanForFirestore(u));
       });
       await batch.commit();
@@ -170,10 +211,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 1. Immediate direct fetch from Firestore
     getDocs(usersColRef).then((snapshot) => {
       if (!isMounted) return;
+      const deletedIds = getDeletedUserIds();
       if (!snapshot.empty) {
         const firestoreUsers: User[] = [];
         snapshot.forEach((docSnap) => {
-          firestoreUsers.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          if (!deletedIds.has(docSnap.id)) {
+            firestoreUsers.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          }
         });
         if (firestoreUsers.length > 0) {
           setAllUsers(prev => mergeFirestoreUsers(prev, firestoreUsers));
@@ -189,14 +233,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 2. Real-time snapshot listener across all connected devices
     try {
       const unsub = onSnapshot(usersColRef, (snapshot) => {
-        if (!snapshot.empty && isMounted) {
-          const firestoreUsers: User[] = [];
-          snapshot.forEach((docSnap) => {
+        if (!isMounted) return;
+        const deletedIds = getDeletedUserIds();
+        const firestoreUsers: User[] = [];
+        snapshot.forEach((docSnap) => {
+          if (!deletedIds.has(docSnap.id)) {
             firestoreUsers.push({ id: docSnap.id, ...(docSnap.data() as any) });
-          });
-          if (firestoreUsers.length > 0) {
-            setAllUsers(prev => mergeFirestoreUsers(prev, firestoreUsers));
           }
+        });
+        if (firestoreUsers.length > 0) {
+          setAllUsers(prev => mergeFirestoreUsers(prev, firestoreUsers));
         }
       }, (err) => {
         console.warn('Firestore users listener notice:', err);
@@ -645,6 +691,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteUser = async (userId: string): Promise<void> => {
+    markUsersAsDeleted(userId);
     const userToDelete = allUsers.find(u => u.id === userId);
     
     setAllUsers(prev => {
@@ -676,17 +723,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return updated;
     });
 
+    if (currentUser.id === userId) {
+      const fallbackUser = allUsers.find(u => u.id !== userId && (u.role === 'admin' || u.role === 'walikelas')) || DEMO_USERS[0];
+      setCurrentUserState(fallbackUser);
+      localStorage.setItem(AUTH_SESSION_KEY, fallbackUser.id);
+    }
+
     if (db) {
       try {
         await deleteDoc(doc(db, 'users', userId));
+        
+        // Also cascade delete all journals belonging to this student
+        if (userToDelete?.role === 'siswa') {
+          const journalsSnapshot = await getDocs(collection(db, 'journals'));
+          const batch = writeBatch(db);
+          let count = 0;
+          journalsSnapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            if (data.studentId === userId) {
+              batch.delete(doc(db, 'journals', docSnap.id));
+              count++;
+            }
+          });
+          if (count > 0) {
+            await batch.commit();
+          }
+        }
       } catch (e) {
-        console.warn('Firestore delete user fallback:', e);
+        console.warn('Firestore delete user and cascade sync fallback:', e);
       }
     }
   };
 
   const deleteUsersBulk = async (userIds: string[]): Promise<void> => {
     if (!userIds || userIds.length === 0) return;
+    markUsersAsDeleted(userIds);
     const userSet = new Set(userIds);
     const usersToDelete = allUsers.filter(u => userSet.has(u.id));
     const studentIdsToDelete = new Set(usersToDelete.filter(u => u.role === 'siswa').map(u => u.id));
@@ -719,15 +790,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return updated;
     });
 
+    if (userSet.has(currentUser.id)) {
+      const fallbackUser = allUsers.find(u => !userSet.has(u.id) && (u.role === 'admin' || u.role === 'walikelas')) || DEMO_USERS[0];
+      setCurrentUserState(fallbackUser);
+      localStorage.setItem(AUTH_SESSION_KEY, fallbackUser.id);
+    }
+
     if (db) {
       try {
         const batch = writeBatch(db);
         userIds.forEach(uid => {
           batch.delete(doc(db, 'users', uid));
         });
+        
+        // Also cascade delete journals for all deleted students
+        if (studentIdsToDelete.size > 0) {
+          const journalsSnapshot = await getDocs(collection(db, 'journals'));
+          journalsSnapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            if (studentIdsToDelete.has(data.studentId)) {
+              batch.delete(doc(db, 'journals', docSnap.id));
+            }
+          });
+        }
+
         await batch.commit();
       } catch (e) {
-        console.warn('Firestore bulk delete user fallback:', e);
+        console.warn('Firestore bulk delete user and cascade fallback:', e);
       }
     }
   };

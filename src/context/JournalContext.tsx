@@ -13,7 +13,7 @@ import { getDateString } from '../lib/mockData';
 import { audioNotifier } from '../lib/audioNotifier';
 import { E2EEService } from '../lib/crypto';
 import { db, cleanForFirestore } from '../lib/firebase';
-import { collection, setDoc, doc, onSnapshot, deleteDoc, getDocs } from 'firebase/firestore';
+import { collection, setDoc, doc, onSnapshot, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 
 interface JournalContextType {
   journals: JournalEntry[];
@@ -69,8 +69,33 @@ interface JournalContextType {
 const JournalContext = createContext<JournalContextType | undefined>(undefined);
 
 const JOURNALS_STORAGE_KEY = '7kaih_journals_v2';
+const DELETED_JOURNALS_STORAGE_KEY = '7kaih_deleted_journals_v1';
 const REMINDERS_STORAGE_KEY = '7kaih_reminders_v1';
 const NOTIFICATIONS_STORAGE_KEY = '7kaih_notifications_v1';
+
+export const getDeletedJournalIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(DELETED_JOURNALS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return new Set(parsed);
+    }
+  } catch (e) {
+    console.warn('Error reading deleted journals:', e);
+  }
+  return new Set();
+};
+
+export const markJournalsAsDeleted = (ids: string | string[]) => {
+  try {
+    const existing = getDeletedJournalIds();
+    const idList = Array.isArray(ids) ? ids : [ids];
+    idList.forEach(id => existing.add(id));
+    localStorage.setItem(DELETED_JOURNALS_STORAGE_KEY, JSON.stringify(Array.from(existing)));
+  } catch (e) {
+    console.warn('Error marking journals as deleted:', e);
+  }
+};
 
 export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Clear any legacy seed data from v1
@@ -83,11 +108,14 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const [journals, setJournals] = useState<JournalEntry[]>(() => {
+    const deletedIds = getDeletedJournalIds();
     const saved = localStorage.getItem(JOURNALS_STORAGE_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed.filter(j => !deletedIds.has(j.id));
+        }
       } catch (e) {
         console.error('Failed to parse cached journals:', e);
       }
@@ -154,19 +182,18 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // 1. Direct initial fetch for instant cross-device visibility
     getDocs(journalsColRef).then((snapshot) => {
-      if (isMounted && !snapshot.empty) {
+      if (!isMounted) return;
+      const deletedIds = getDeletedJournalIds();
+      if (!snapshot.empty) {
         const firestoreJournals: JournalEntry[] = [];
         snapshot.forEach((docSnap) => {
-          firestoreJournals.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          if (!deletedIds.has(docSnap.id)) {
+            firestoreJournals.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          }
         });
-        if (firestoreJournals.length > 0) {
-          setJournals(prev => {
-            const map = new Map<string, JournalEntry>();
-            prev.forEach(j => map.set(j.id, j));
-            firestoreJournals.forEach(j => map.set(j.id, j));
-            return Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-          });
-        }
+        setJournals(firestoreJournals.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+      } else {
+        setJournals([]);
       }
     }).catch(err => {
       console.warn('Firestore journals direct fetch notice:', err);
@@ -175,20 +202,15 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // 2. Real-time snapshot listener
     try {
       const unsub = onSnapshot(journalsColRef, (snapshot) => {
-        if (!snapshot.empty && isMounted) {
-          const firestoreJournals: JournalEntry[] = [];
-          snapshot.forEach((docSnap) => {
+        if (!isMounted) return;
+        const deletedIds = getDeletedJournalIds();
+        const firestoreJournals: JournalEntry[] = [];
+        snapshot.forEach((docSnap) => {
+          if (!deletedIds.has(docSnap.id)) {
             firestoreJournals.push({ id: docSnap.id, ...(docSnap.data() as any) });
-          });
-          if (firestoreJournals.length > 0) {
-            setJournals(prev => {
-              const map = new Map<string, JournalEntry>();
-              prev.forEach(j => map.set(j.id, j));
-              firestoreJournals.forEach(j => map.set(j.id, j));
-              return Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-            });
           }
-        }
+        });
+        setJournals(firestoreJournals.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
       }, (err) => {
         console.warn('Firestore journals listener notice:', err);
       });
@@ -492,7 +514,13 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteJournal = async (journalId: string): Promise<void> => {
-    setJournals(prev => prev.filter(j => j.id !== journalId));
+    markJournalsAsDeleted(journalId);
+    setJournals(prev => {
+      const updated = prev.filter(j => j.id !== journalId);
+      localStorage.setItem(JOURNALS_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
     if (db) {
       try {
         await deleteDoc(doc(db, 'journals', journalId));
@@ -503,11 +531,22 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteJournalsBulk = async (journalIds: string[]): Promise<void> => {
+    if (!journalIds || journalIds.length === 0) return;
+    markJournalsAsDeleted(journalIds);
     const idSet = new Set(journalIds);
-    setJournals(prev => prev.filter(j => !idSet.has(j.id)));
+    setJournals(prev => {
+      const updated = prev.filter(j => !idSet.has(j.id));
+      localStorage.setItem(JOURNALS_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
     if (db) {
       try {
-        await Promise.all(journalIds.map(id => deleteDoc(doc(db, 'journals', id))));
+        const batch = writeBatch(db);
+        journalIds.forEach(id => {
+          batch.delete(doc(db, 'journals', id));
+        });
+        await batch.commit();
       } catch (e) {
         console.warn('Firestore bulk delete journal sync:', e);
       }
@@ -516,6 +555,9 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const clearAllJournals = async (): Promise<void> => {
     const currentJournals = [...journals];
+    if (currentJournals.length > 0) {
+      markJournalsAsDeleted(currentJournals.map(j => j.id));
+    }
     setJournals([]);
     try {
       localStorage.removeItem(JOURNALS_STORAGE_KEY);
@@ -526,11 +568,11 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (db) {
       try {
         const querySnapshot = await getDocs(collection(db, 'journals'));
-        const deletePromises: Promise<void>[] = [];
+        const batch = writeBatch(db);
         querySnapshot.forEach((docSnap) => {
-          deletePromises.push(deleteDoc(doc(db, 'journals', docSnap.id)));
+          batch.delete(doc(db, 'journals', docSnap.id));
         });
-        await Promise.all(deletePromises);
+        await batch.commit();
       } catch (e) {
         console.warn('Firestore clear all journals sync:', e);
       }
