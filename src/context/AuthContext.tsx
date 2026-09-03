@@ -37,8 +37,18 @@ interface AuthContextType {
     noAbsen?: string; 
     className: string; 
     gender?: 'L' | 'P'; 
+    religion?: string;
     parentName?: string; 
     parentPhone?: string 
+  }[]) => Promise<number>;
+  importTeachersBulk: (importedList: {
+    name: string;
+    nip?: string;
+    className: string;
+    gender?: 'L' | 'P';
+    phone?: string;
+    username?: string;
+    password?: string;
   }[]) => Promise<number>;
   generateNewCredentials: (userId: string) => Promise<string>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
@@ -50,17 +60,60 @@ const USERS_STORAGE_KEY = '7kaih_users_v1';
 const DELETED_USERS_STORAGE_KEY = '7kaih_deleted_users_v1';
 const AUTH_SESSION_KEY = '7kaih_auth_session_v1';
 
+// Blacklist of permanent target deleted users & identifiers
+export const PURGED_USER_IDS = new Set<string>([
+  'usr-siswa-1',
+  'usr-siswa-2',
+  'usr-siswa-3',
+  'usr-siswa-4',
+  'usr-ortu-1',
+  'usr-ortu-2',
+  'usr-ortu-3',
+  'usr-ortu-4',
+  'usr-walikelas-2'
+]);
+
+export const PURGED_IDENTIFIERS = new Set<string>([
+  '8923', '8924', '8925', '8926',
+  'ortu.8923', 'ortu.8924', 'ortu.8925', 'ortu.8926',
+  'wali.7b'
+]);
+
+export const isTargetPurgedUser = (u: any): boolean => {
+  if (!u) return false;
+  if (u.id && PURGED_USER_IDS.has(String(u.id))) return true;
+  if (u.nis && PURGED_IDENTIFIERS.has(String(u.nis).trim())) return true;
+  if (u.nisn && PURGED_IDENTIFIERS.has(String(u.nisn).trim())) return true;
+  if (u.email && PURGED_IDENTIFIERS.has(String(u.email).trim().toLowerCase())) return true;
+  
+  const name = String(u.name || '').toLowerCase().trim();
+  if (name.includes('budi santoso')) return true;
+  if (name.includes('ahmad rizky pratama') || name.includes('ahmad rizky')) return true;
+  if (name.includes('nadia salsabila') || name.includes('nadla salsabila')) return true;
+  if (name.includes('dimas bagus wicaksono') || name.includes('dimas bagus')) return true;
+  if (name.includes('kirana zahra larasati') || name.includes('kirana zahra')) return true;
+  if (name.includes('hendra pratama')) return true;
+  if (name.includes('ratna dewi')) return true;
+  if (name.includes('wicaksono (ortu') || name.includes('ortu dimas')) return true;
+  if (name.includes('larasati (ortu') || name.includes('ortu kirana')) return true;
+  
+  return false;
+};
+
 export const getDeletedUserIds = (): Set<string> => {
+  const set = new Set<string>(PURGED_USER_IDS);
   try {
     const raw = localStorage.getItem(DELETED_USERS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return new Set(parsed);
+      if (Array.isArray(parsed)) {
+        parsed.forEach(id => set.add(id));
+      }
     }
   } catch (e) {
     console.warn('Error reading deleted users:', e);
   }
-  return new Set();
+  return set;
 };
 
 export const markUsersAsDeleted = (ids: string | string[]) => {
@@ -72,6 +125,17 @@ export const markUsersAsDeleted = (ids: string | string[]) => {
   } catch (e) {
     console.warn('Error marking users as deleted:', e);
   }
+};
+
+export const normalizeReligionName = (religion?: string): string => {
+  if (!religion) return 'Islam';
+  const clean = religion.trim().toLowerCase();
+  if (clean.includes('kristen') || clean.includes('protestan')) return 'Kristen';
+  if (clean.includes('katolik')) return 'Katolik';
+  if (clean.includes('hindu')) return 'Hindu';
+  if (clean.includes('buddha') || clean.includes('budha')) return 'Buddha';
+  if (clean.includes('konghucu') || clean.includes('khonghucu')) return 'Konghucu';
+  return 'Islam';
 };
 
 export const normalizeClassName = (cn?: string): string => {
@@ -98,20 +162,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const parsed: User[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed
-            .filter(u => !deletedIds.has(u.id))
+          const filtered = parsed
+            .filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u))
             .map(u => ({
               ...u,
               className: u.className ? normalizeClassName(u.className) : u.className,
               avatar: getUserAvatarUrl(u)
             }));
+          if (filtered.length > 0) return filtered;
         }
       } catch (e) {
         console.error('Failed to parse cached users:', e);
       }
     }
     return DEMO_USERS
-      .filter(u => !deletedIds.has(u.id))
+      .filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u))
       .map(u => ({
         ...u,
         className: u.className ? normalizeClassName(u.className) : u.className,
@@ -120,19 +185,121 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [currentUser, setCurrentUserState] = useState<User>(() => {
+    const deletedIds = getDeletedUserIds();
     const sessionUserId = localStorage.getItem(AUTH_SESSION_KEY);
     if (sessionUserId) {
       const match = allUsers.find(u => u.id === sessionUserId);
-      if (match) return match;
+      if (match && !deletedIds.has(match.id) && !isTargetPurgedUser(match)) {
+        return match;
+      } else {
+        localStorage.removeItem(AUTH_SESSION_KEY);
+      }
     }
-    const defaultUser = allUsers.find(u => u.role === 'siswa') || DEMO_USERS[0];
+    const defaultUser = allUsers.find(u => u.role === 'admin') || allUsers[0] || DEMO_USERS[0];
     return defaultUser;
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     const sessionUserId = localStorage.getItem(AUTH_SESSION_KEY);
-    return !!sessionUserId;
+    if (!sessionUserId) return false;
+    const deletedIds = getDeletedUserIds();
+    return !deletedIds.has(sessionUserId) && !PURGED_USER_IDS.has(sessionUserId);
   });
+
+  // Startup Cleanup: Immediately purge cache & cloud database
+  useEffect(() => {
+    try {
+      const deletedIds = getDeletedUserIds();
+      // 1. Purge local storage users cache
+      const rawUsers = localStorage.getItem(USERS_STORAGE_KEY);
+      if (rawUsers) {
+        try {
+          const parsed = JSON.parse(rawUsers);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u));
+            localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(cleaned));
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // 2. Purge local storage journals cache
+      const rawJournals = localStorage.getItem('7kaih_journals_v2');
+      if (rawJournals) {
+        try {
+          const parsedJ = JSON.parse(rawJournals);
+          if (Array.isArray(parsedJ)) {
+            const cleanedJ = parsedJ.filter(j => !deletedIds.has(j.studentId) && !PURGED_USER_IDS.has(j.studentId) && !PURGED_IDENTIFIERS.has(j.studentId));
+            localStorage.setItem('7kaih_journals_v2', JSON.stringify(cleanedJ));
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // 3. Purge session if pointed to deleted user
+      const session = localStorage.getItem(AUTH_SESSION_KEY);
+      if (session && (deletedIds.has(session) || PURGED_USER_IDS.has(session))) {
+        localStorage.removeItem(AUTH_SESSION_KEY);
+      }
+
+      // 4. Cloud Firestore thorough purge for target deleted records
+      if (db) {
+        const purgeFirestore = async () => {
+          try {
+            // Delete target document IDs directly
+            const batch = writeBatch(db);
+            PURGED_USER_IDS.forEach(uid => {
+              batch.delete(doc(db, 'users', uid));
+            });
+            await batch.commit();
+
+            // Query users collection to catch any docs matching names or NIS
+            const userDocs = await getDocs(collection(db, 'users'));
+            if (!userDocs.empty) {
+              const uBatch = writeBatch(db);
+              let uCount = 0;
+              userDocs.forEach(d => {
+                const data = d.data();
+                if (isTargetPurgedUser({ id: d.id, ...data })) {
+                  uBatch.delete(doc(db, 'users', d.id));
+                  uCount++;
+                }
+              });
+              if (uCount > 0) {
+                await uBatch.commit();
+                console.log(`[Firestore] Cleaned up ${uCount} purged user docs.`);
+              }
+            }
+
+            // Query journals collection to cascade delete entries belonging to purged students
+            const journalDocs = await getDocs(collection(db, 'journals'));
+            if (!journalDocs.empty) {
+              const jBatch = writeBatch(db);
+              let jCount = 0;
+              journalDocs.forEach(jd => {
+                const jData = jd.data();
+                if (PURGED_USER_IDS.has(jData.studentId) || PURGED_IDENTIFIERS.has(jData.studentId)) {
+                  jBatch.delete(doc(db, 'journals', jd.id));
+                  jCount++;
+                }
+              });
+              if (jCount > 0) {
+                await jBatch.commit();
+                console.log(`[Firestore] Cleaned up ${jCount} purged journal docs.`);
+              }
+            }
+          } catch (cloudErr) {
+            console.warn('[Firestore] Purge notice:', cloudErr);
+          }
+        };
+        purgeFirestore();
+      }
+    } catch (err) {
+      console.warn('Initial cleanup error:', err);
+    }
+  }, []);
 
   // Sync users to localStorage whenever allUsers changes
   useEffect(() => {
@@ -150,7 +317,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     // 1. Put demo admin and teachers as safety fallbacks only if not deleted
     DEMO_USERS
-      .filter(u => (u.role === 'admin' || u.role === 'walikelas') && !deletedIds.has(u.id))
+      .filter(u => (u.role === 'admin' || u.role === 'walikelas') && !deletedIds.has(u.id) && !isTargetPurgedUser(u))
       .forEach(u => {
         map.set(u.id, {
           ...u,
@@ -160,7 +327,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. Put existing local non-deleted users
     prevUsers
-      .filter(u => !deletedIds.has(u.id))
+      .filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u))
       .forEach(u => {
         map.set(u.id, {
           ...u,
@@ -171,7 +338,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 3. Put remote firestore users (Cloud is authoritative) only if not deleted
     firestoreUsers
-      .filter(u => !deletedIds.has(u.id))
+      .filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u))
       .forEach(u => {
         map.set(u.id, {
           ...u,
@@ -188,7 +355,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!db) return;
     try {
       const deletedIds = getDeletedUserIds();
-      const nonDeletedDemoUsers = DEMO_USERS.filter(u => !deletedIds.has(u.id));
+      const nonDeletedDemoUsers = DEMO_USERS.filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u));
       if (nonDeletedDemoUsers.length === 0) return;
 
       const batch = writeBatch(db);
@@ -216,8 +383,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!snapshot.empty) {
         const firestoreUsers: User[] = [];
         snapshot.forEach((docSnap) => {
-          if (!deletedIds.has(docSnap.id)) {
-            firestoreUsers.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          const data = docSnap.data();
+          const candidate = { id: docSnap.id, ...(data as any) };
+          if (!deletedIds.has(docSnap.id) && !isTargetPurgedUser(candidate)) {
+            firestoreUsers.push(candidate);
           }
         });
         if (firestoreUsers.length > 0) {
@@ -238,8 +407,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const deletedIds = getDeletedUserIds();
         const firestoreUsers: User[] = [];
         snapshot.forEach((docSnap) => {
-          if (!deletedIds.has(docSnap.id)) {
-            firestoreUsers.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          const data = docSnap.data();
+          const candidate = { id: docSnap.id, ...(data as any) };
+          if (!deletedIds.has(docSnap.id) && !isTargetPurgedUser(candidate)) {
+            firestoreUsers.push(candidate);
           }
         });
         if (firestoreUsers.length > 0) {
@@ -1010,6 +1181,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       noAbsen?: string; 
       className: string; 
       gender?: 'L' | 'P'; 
+      religion?: string;
       parentName?: string; 
       parentPhone?: string 
     }[]
@@ -1038,6 +1210,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
+      const cleanReligion = normalizeReligionName(item.religion);
+
       // 1. Orang tua: Otomatis dibuatkan akun dan dihubungkan ke anak
       const pName = item.parentName?.trim() || `Orang Tua dari ${cleanName}`;
       const parentUser: User = {
@@ -1064,6 +1238,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: cleanNis,
         role: 'siswa',
         gender: cleanGender,
+        religion: cleanReligion,
         nis: cleanNis,
         nisn: cleanNis,
         attendanceNumber: cleanAbsen,
@@ -1112,6 +1287,95 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return count;
   };
 
+  const importTeachersBulk = async (
+    importedList: {
+      name: string;
+      nip?: string;
+      className: string;
+      gender?: 'L' | 'P';
+      phone?: string;
+      username?: string;
+      password?: string;
+    }[]
+  ): Promise<number> => {
+    let count = 0;
+    const newTeachers: User[] = [];
+
+    for (const item of importedList) {
+      const cleanName = item.name.trim();
+      if (!cleanName) continue;
+
+      const rawClass = (item.className || '').trim();
+      const normalizedClass = rawClass ? normalizeClassName(rawClass) : '7A';
+      const cleanClassCode = normalizedClass.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cleanNip = item.nip ? String(item.nip).trim().replace(/[^0-9]/g, '') : undefined;
+      
+      const teacherId = `usr-walikelas-${cleanClassCode || (cleanNip || Date.now())}`;
+
+      let cleanGender: 'L' | 'P' = 'L';
+      if (item.gender) {
+        const gStr = item.gender.trim().toUpperCase();
+        if (gStr.startsWith('P') || gStr === 'WANITA' || gStr === 'PEREMPUAN') {
+          cleanGender = 'P';
+        } else {
+          cleanGender = 'L';
+        }
+      }
+
+      const cleanUsername = (item.username && item.username.trim()) || `wali.${cleanClassCode || (cleanNip || 'guru')}`;
+      const cleanPassword = (item.password && item.password.trim()) || 'wali123#Secure';
+
+      const teacherUser: User = {
+        id: teacherId,
+        name: cleanName,
+        email: cleanUsername,
+        role: 'walikelas',
+        gender: cleanGender,
+        nip: cleanNip || undefined,
+        className: `${normalizedClass} (Wali Kelas)`,
+        classId: `class-${cleanClassCode}`,
+        assignedClassIds: [`class-${cleanClassCode}`, normalizedClass],
+        phone: item.phone ? String(item.phone).trim() : '08112233445',
+        avatar: DATA_URI_WALI_KELAS,
+        password: cleanPassword,
+        schoolName: 'SMP Negeri 2 Kasihan',
+        createdAt: new Date().toISOString()
+      };
+
+      newTeachers.push(teacherUser);
+      count++;
+    }
+
+    if (newTeachers.length === 0) return 0;
+
+    setAllUsers(prev => {
+      const newIds = new Set(newTeachers.map(t => t.id));
+      const filteredPrev = prev.filter(u => !newIds.has(u.id));
+      const updated = [...newTeachers, ...filteredPrev];
+      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
+    if (db) {
+      try {
+        const chunkSize = 100;
+        for (let i = 0; i < newTeachers.length; i += chunkSize) {
+          const chunk = newTeachers.slice(i, i + chunkSize);
+          const batch = writeBatch(db);
+          chunk.forEach(u => {
+            batch.set(doc(db, 'users', u.id), cleanForFirestore(u));
+          });
+          await batch.commit();
+        }
+        console.log(`Successfully synced ${newTeachers.length} imported teachers to Cloud Firestore!`);
+      } catch (e) {
+        console.error('Firestore write batch error during teacher import:', e);
+      }
+    }
+
+    return count;
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -1130,6 +1394,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         purgeDeletedUsersAndOrphansFromCloud,
         syncAllUsersToCloud,
         importStudentsBulk,
+        importTeachersBulk,
         generateNewCredentials,
         changePassword
       }}

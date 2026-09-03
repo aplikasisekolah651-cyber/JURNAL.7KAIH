@@ -226,13 +226,29 @@ export const TeacherDashboard: React.FC = () => {
     );
   };
 
-  // Export Individual Student PDF
+  // Export Individual Student PDF (Summary)
   const handleExportStudentPDF = (student: User) => {
     const sJournals = getStudentJournals(student.id);
     const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const currentMonth = monthNames[new Date().getMonth()] + ' ' + new Date().getFullYear();
     const teacherLookup = PDFReportGenerator.getTeacherForClass(student.className, allUsers) || { name: currentUser.name, nip: currentUser.nip };
     PDFReportGenerator.generateStudentReport(
+      student,
+      sJournals,
+      currentMonth,
+      teacherNoteInput,
+      schoolSettings,
+      teacherLookup
+    );
+  };
+
+  // Export Detailed Implementation 7KAIH PDF
+  const handleExportDetailedStudentPDF = (student: User) => {
+    const sJournals = getStudentJournals(student.id);
+    const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    const currentMonth = monthNames[new Date().getMonth()] + ' ' + new Date().getFullYear();
+    const teacherLookup = PDFReportGenerator.getTeacherForClass(student.className, allUsers) || { name: currentUser.name, nip: currentUser.nip };
+    PDFReportGenerator.generateStudentDetailedReport(
       student,
       sJournals,
       currentMonth,
@@ -671,13 +687,22 @@ export const TeacherDashboard: React.FC = () => {
                         <span>Bimbingan</span>
                       </button>
 
-                      {/* PDF Report Export */}
+                      {/* PDF Report Export (Summary) */}
                       <button
                         onClick={() => handleExportStudentPDF(row.student)}
-                        title="Cetak Laporan PDF Siswa"
+                        title="Cetak Ringkasan Evaluasi PDF (A4 Portrait)"
                         className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition-colors"
                       >
                         <FileDown className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* PDF Detailed Daily 7KAIH Export */}
+                      <button
+                        onClick={() => handleExportDetailedStudentPDF(row.student)}
+                        title="Cetak Detail Pelaksanaan 7KAIH PDF (A4 Landscape)"
+                        className="p-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-colors"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </td>
@@ -801,7 +826,7 @@ export const TeacherDashboard: React.FC = () => {
 
             {/* Footer */}
             <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => {
                     handleOpenWAReminderForStudent(inspectingStudent);
@@ -817,7 +842,15 @@ export const TeacherDashboard: React.FC = () => {
                   className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5"
                 >
                   <FileDown className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Cetak Rapor Bulanan (PDF)</span>
+                  <span>Cetak Ringkasan</span>
+                </button>
+
+                <button
+                  onClick={() => handleExportDetailedStudentPDF(inspectingStudent)}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800"
+                >
+                  <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Cetak Detail Pelaksanaan 7KAIH</span>
                 </button>
               </div>
 

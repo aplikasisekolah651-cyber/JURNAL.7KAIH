@@ -73,7 +73,7 @@ const MainLayout: React.FC = () => {
           teachers: 'Data Guru & Wali Kelas',
           journals: 'Monitoring Jurnal',
           reports: 'Rekap & Laporan',
-          import: 'Import Data Siswa',
+          import: 'Import Data (Siswa & Wali)',
           credentials: 'Kartu Akun & Sandi',
           settings: 'Pengaturan Sekolah',
           database: 'Database & Keamanan',

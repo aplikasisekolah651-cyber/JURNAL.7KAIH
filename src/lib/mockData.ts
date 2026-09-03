@@ -20,18 +20,13 @@ export function generateSeedJournals(): JournalEntry[] {
       const isToday = i === 0;
       
       // Calculate realistic variation per student
-      // Student 1 (Rizky): high achiever (85-100%)
-      // Student 2 (Nadia): good achiever (75-90%)
-      // Student 3 (Dimas): moderate developing (50-75%)
-      // Student 4 (Kirana): very consistent (90-100%)
       let successProbability = 0.85;
       if (sIdx === 1) successProbability = 0.80;
       if (sIdx === 2) successProbability = 0.62;
       if (sIdx === 3) successProbability = 0.92;
 
-      // Make today optional or partial for student 1 to allow live filling
+      // Make today optional or partial for student index 0 to allow live filling
       if (isToday && sIdx === 0) {
-        // Today is not submitted yet for Ahmad Rizky so user can try filing it
         continue;
       }
 

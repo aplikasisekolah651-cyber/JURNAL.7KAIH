@@ -16,6 +16,7 @@ import {
   ChevronRight, 
   Sparkles, 
   FileSpreadsheet, 
+  FileText,
   X, 
   Star, 
   Image as ImageIcon,
@@ -271,7 +272,7 @@ export const AdminJournalMonitoring: React.FC = () => {
     XLSX.writeFile(wb, `Rekap_Jurnal_Siswa_7KAIH_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // Print individual student PDF
+  // Print individual student PDF (Summary)
   const handlePrintStudentPDF = (journal: JournalEntry) => {
     const studentUser = allUsers.find(u => u.id === journal.studentId) || {
       id: journal.studentId,
@@ -288,6 +289,32 @@ export const AdminJournalMonitoring: React.FC = () => {
 
     const sJournals = journals.filter(j => j.studentId === journal.studentId);
     PDFReportGenerator.generateStudentReport(
+      studentUser,
+      sJournals,
+      journal.date.substring(0, 7),
+      undefined,
+      schoolSettings,
+      studentTeacher
+    );
+  };
+
+  // Print individual student Detailed Implementation PDF (7KAIH Matriks)
+  const handlePrintStudentDetailedPDF = (journal: JournalEntry) => {
+    const studentUser = allUsers.find(u => u.id === journal.studentId) || {
+      id: journal.studentId,
+      name: journal.studentName,
+      email: journal.studentNisn || 'siswa',
+      role: 'siswa' as const,
+      className: journal.className,
+      nisn: journal.studentNisn,
+      createdAt: new Date().toISOString()
+    };
+
+    const studentClass = studentUser.className || journal.className;
+    const studentTeacher = PDFReportGenerator.getTeacherForClass(studentClass, allUsers);
+
+    const sJournals = journals.filter(j => j.studentId === journal.studentId);
+    PDFReportGenerator.generateStudentDetailedReport(
       studentUser,
       sJournals,
       journal.date.substring(0, 7),
@@ -984,13 +1011,20 @@ export const AdminJournalMonitoring: React.FC = () => {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-end gap-2">
               <button
                 onClick={() => handlePrintStudentPDF(activeJournalDetail)}
                 className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Cetak Laporan PDF</span>
+                <span>Cetak Rekap (A4)</span>
+              </button>
+              <button
+                onClick={() => handlePrintStudentDetailedPDF(activeJournalDetail)}
+                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Cetak Detail 7KAIH (A4)</span>
               </button>
               <button
                 onClick={() => setActiveJournalDetail(null)}

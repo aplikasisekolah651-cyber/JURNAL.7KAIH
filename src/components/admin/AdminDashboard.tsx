@@ -69,6 +69,7 @@ export const AdminDashboard: React.FC = () => {
     deleteUsersBulk, 
     purgeDeletedUsersAndOrphansFromCloud,
     importStudentsBulk, 
+    importTeachersBulk,
     generateNewCredentials, 
     syncAllUsersToCloud 
   } = useAuth();
@@ -151,9 +152,11 @@ export const AdminDashboard: React.FC = () => {
     );
   }, [allUsers]);
 
-  // Excel File Input Ref
+  // Excel File Input Refs
   const excelFileInputRef = React.useRef<HTMLInputElement>(null);
+  const teacherExcelFileInputRef = React.useRef<HTMLInputElement>(null);
   const [selectedFileName, setSelectedFileName] = useState<string>('');
+  const [teacherSelectedFileName, setTeacherSelectedFileName] = useState<string>('');
 
   // Sidebar Menu State synced with browser URL
   const activeMenu: AdminMenuKey = routeInfo.adminTab || 'overview';
@@ -240,7 +243,10 @@ export const AdminDashboard: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [showPasswordsMap, setShowPasswordsMap] = useState<Record<string, boolean>>({});
 
-  // Bulk Import States
+  // Import Tab Mode: 'students' | 'teachers'
+  const [importTabMode, setImportTabMode] = useState<'students' | 'teachers'>('students');
+
+  // Bulk Import States (Siswa)
   const [importText, setImportText] = useState(
 `23451, 01, Muhammad Faiz Al-Farisi, L, 7A, Bpk. Bambang Al-Farisi, 081234567810
 23452, 02, Siti Aisyah Nurhaliza, P, 7A, Ibu Nurhayati, 081234567811
@@ -250,6 +256,21 @@ export const AdminDashboard: React.FC = () => {
   );
   const [importing, setImporting] = useState(false);
   const [importSuccessCount, setImportSuccessCount] = useState<number | null>(null);
+
+  // Bulk Import States (Wali Kelas & Guru)
+  const [teacherImportText, setTeacherImportText] = useState(
+`1, Dra. Hj. Siti Aminah, M.Pd., 197505102005012003, 7A, P, 081234567801, wali.7a, wali123#Secure
+2, Bambang Sudarsono, S.Pd., 198003152008011012, 7B, L, 081234567802, wali.7b, wali123#Secure
+3, Rina Wijayanti, S.Pd., 198509202010012015, 7C, P, 081234567803, wali.7c, wali123#Secure
+4, Drs. H. Suryanto, M.Pd., 196811251994031005, 8A, L, 081234567804, wali.8a, wali123#Secure
+5, Nurul Hidayati, S.Pd., 198207182006042021, 8B, P, 081234567805, wali.8b, wali123#Secure
+6, Agus Prasetyo, S.Pd., 198704122011011008, 8C, L, 081234567806, wali.8c, wali123#Secure
+7, Sri Wahyuni, M.Pd., 197208141998022001, 9A, P, 081234567807, wali.9a, wali123#Secure
+8, Joko Purnomo, S.Pd., 198302052009021004, 9B, L, 081234567808, wali.9b, wali123#Secure
+9, Dewi Sartika, S.Pd., 199010102015032002, 9C, P, 081234567809, wali.9c, wali123#Secure`
+  );
+  const [teacherImporting, setTeacherImporting] = useState(false);
+  const [teacherImportSuccessCount, setTeacherImportSuccessCount] = useState<number | null>(null);
 
   // Print & Batch Credentials State
   const [credentialFilterClass, setCredentialFilterClass] = useState<string>('all');
@@ -279,6 +300,24 @@ export const AdminDashboard: React.FC = () => {
     return s === 'L' || s === 'P' || s === 'LAKI-LAKI' || s === 'PEREMPUAN' || s === 'LAKI' || s === 'WANITA' || s === 'PRIA' || s === 'M' || s === 'F';
   };
 
+  // Helper to normalize religion strings
+  const normalizeReligionVal = (val?: string): string => {
+    if (!val) return 'Islam';
+    const s = String(val).trim().toLowerCase();
+    if (s.includes('kristen') || s.includes('protestan')) return 'Kristen';
+    if (s.includes('katolik')) return 'Katolik';
+    if (s.includes('hindu')) return 'Hindu';
+    if (s.includes('buddha') || s.includes('budha')) return 'Buddha';
+    if (s.includes('konghucu') || s.includes('khonghucu')) return 'Konghucu';
+    return 'Islam';
+  };
+
+  const isReligionToken = (val?: string): boolean => {
+    if (!val) return false;
+    const s = String(val).trim().toLowerCase();
+    return ['islam', 'kristen', 'protestan', 'katolik', 'catholic', 'hindu', 'buddha', 'budha', 'konghucu', 'khonghucu'].some(r => s.includes(r));
+  };
+
   const isClassToken = (val?: string): boolean => {
     if (!val) return false;
     const s = String(val).trim().toUpperCase().replace(/\s+/g, '');
@@ -303,6 +342,7 @@ export const AdminDashboard: React.FC = () => {
         attendanceNumber: '',
         name: '',
         gender: 'L' as 'L' | 'P',
+        religion: 'Islam',
         className: '7A',
         studentUsername: '',
         studentPassword: '',
@@ -332,7 +372,7 @@ export const AdminDashboard: React.FC = () => {
     // Check if line is a header row
     const joinedLower = rawParts.join(' ').toLowerCase();
     const isHeader = (
-      (joinedLower.includes('nama') && (joinedLower.includes('nis') || joinedLower.includes('kelas') || joinedLower.includes('absen') || joinedLower.includes('kelamin') || joinedLower.includes('gender') || joinedLower.includes('ortu'))) ||
+      (joinedLower.includes('nama') && (joinedLower.includes('nis') || joinedLower.includes('kelas') || joinedLower.includes('absen') || joinedLower.includes('kelamin') || joinedLower.includes('gender') || joinedLower.includes('agama') || joinedLower.includes('religion') || joinedLower.includes('ortu'))) ||
       (joinedLower.includes('no') && (joinedLower.includes('absen') || joinedLower.includes('nama') || joinedLower.includes('siswa'))) ||
       (joinedLower.includes('daftar siswa') || joinedLower.includes('rekap peserta') || joinedLower.includes('buku induk')) ||
       rawParts[0]?.toLowerCase() === 'nis' ||
@@ -350,6 +390,7 @@ export const AdminDashboard: React.FC = () => {
         attendanceNumber: '',
         name: 'Header Kolom',
         gender: 'L' as 'L' | 'P',
+        religion: 'Islam',
         className: '',
         studentUsername: '',
         studentPassword: '',
@@ -367,6 +408,7 @@ export const AdminDashboard: React.FC = () => {
     let detectedPhone = '';
     let detectedClass = '';
     let detectedGender: 'L' | 'P' | null = null;
+    let detectedReligion = '';
     let detectedAbsen = '';
     let detectedNis = '';
     const detectedNames: string[] = [];
@@ -393,21 +435,27 @@ export const AdminDashboard: React.FC = () => {
         return;
       }
 
-      // 4. Absen number (1-2 digits, 1 to 50)
+      // 4. Religion (Islam / Kristen / Katolik / Hindu / Buddha / Konghucu)
+      if (!detectedReligion && isReligionToken(token)) {
+        detectedReligion = normalizeReligionVal(token);
+        return;
+      }
+
+      // 5. Absen number (1-2 digits, 1 to 50)
       if (!detectedAbsen && /^\d{1,2}$/.test(token) && parseInt(token, 10) >= 1 && parseInt(token, 10) <= 60) {
         detectedAbsen = token.padStart(2, '0');
         return;
       }
 
-      // 5. NIS (Numeric string 3-12 digits)
+      // 6. NIS (Numeric string 3-12 digits)
       if (!detectedNis && /^\d{3,12}$/.test(token)) {
         detectedNis = token;
         return;
       }
 
-      // 6. Text Names (Student Name / Parent Name)
-      // If it contains alphabetic characters and is not a gender or class token
-      if (/[a-zA-Z]/.test(token) && token.length >= 2 && !isGenderToken(token) && !isClassToken(token)) {
+      // 7. Text Names (Student Name / Parent Name)
+      // If it contains alphabetic characters and is not a gender, class, or religion token
+      if (/[a-zA-Z]/.test(token) && token.length >= 2 && !isGenderToken(token) && !isClassToken(token) && !isReligionToken(token)) {
         detectedNames.push(token);
       }
     });
@@ -426,6 +474,7 @@ export const AdminDashboard: React.FC = () => {
 
     const finalClassName = detectedClass || '7A';
     const finalGender = detectedGender || 'L';
+    const finalReligion = detectedReligion || 'Islam';
     const finalNoAbsen = detectedAbsen || (rowIdx > 0 ? String(rowIdx).padStart(2, '0') : '01');
 
     // Auto-Heal NIS if missing: construct from Class + Absen (e.g., 7A01, 7A02) or generated unique ID
@@ -460,6 +509,7 @@ export const AdminDashboard: React.FC = () => {
       attendanceNumber: cleanNoAbsen,
       name: cleanName,
       gender: finalGender,
+      religion: finalReligion,
       className: finalClassName,
       studentUsername: cleanNis,
       studentPassword: `siswa${cleanNis}`,
@@ -490,6 +540,177 @@ export const AdminDashboard: React.FC = () => {
     }
     return results;
   }, [importText]);
+
+  // Helper parser for single teacher / wali kelas import row/line
+  const parseTeacherImportLine = (line: string, rowIdx: number = 1) => {
+    const rawLine = line.trim();
+    if (!rawLine) {
+      return {
+        name: '',
+        nip: '',
+        className: '',
+        gender: 'L' as 'L' | 'P',
+        phone: '',
+        username: '',
+        password: '',
+        isValid: false,
+        isHeader: false,
+        errorReason: 'Baris kosong'
+      };
+    }
+
+    const lowerLine = rawLine.toLowerCase();
+    const headerKeywords = ['nama guru', 'nama lengkap', 'wali kelas', 'nip', 'kelas binaan', 'jenis kelamin', 'no hp', 'username', 'password', 'kredensial'];
+    const matchCount = headerKeywords.filter(k => lowerLine.includes(k)).length;
+    if (matchCount >= 2 || lowerLine.startsWith('no,') || lowerLine.startsWith('no\t')) {
+      return {
+        name: '',
+        nip: '',
+        className: '',
+        gender: 'L' as 'L' | 'P',
+        phone: '',
+        username: '',
+        password: '',
+        isValid: false,
+        isHeader: true,
+        errorReason: 'Baris header'
+      };
+    }
+
+    let delimiter = ',';
+    if (rawLine.includes('\t')) delimiter = '\t';
+    else if (rawLine.includes(';') && !rawLine.includes(',')) delimiter = ';';
+    else if (rawLine.includes('|')) delimiter = '|';
+
+    const rawTokens = rawLine.split(delimiter).map(t => t.trim().replace(/^["']|["']$/g, ''));
+    const tokens = rawTokens.filter(t => t.length > 0);
+
+    let name = '';
+    let nip = '';
+    let className = '';
+    let gender: 'L' | 'P' = 'L';
+    let phone = '';
+    let username = '';
+    let password = '';
+
+    const unusedTokens: string[] = [];
+
+    tokens.forEach((tok, idx) => {
+      // 1. Skip leading numerical index (e.g. 1, 01, 2)
+      if (idx === 0 && /^\d{1,3}$/.test(tok) && tokens.length > 2) {
+        return;
+      }
+
+      // 2. Class token (e.g. 7A, 7B, 8A, 9A, etc.)
+      if (!className && (isClassToken(tok) || /^(kelas\s*)?[789VII|VIII|IX]+[A-Z0-9]*$/i.test(tok))) {
+        className = tok.toUpperCase().replace(/^KELAS\s*/i, '').replace(/\s+/g, '');
+        return;
+      }
+
+      // 3. NIP token (starts with 19/20 or has 9+ digits)
+      const cleanDigits = tok.replace(/[^0-9]/g, '');
+      if (!nip && cleanDigits.length >= 9 && (/^(19|20)\d{6,}/.test(cleanDigits) || cleanDigits.length >= 10)) {
+        nip = cleanDigits;
+        return;
+      }
+
+      // 4. Phone token
+      if (!phone && isPhoneToken(tok)) {
+        phone = tok.replace(/[^0-9+]/g, '');
+        return;
+      }
+
+      // 5. Gender token
+      if (isGenderToken(tok)) {
+        gender = normalizeGenderVal(tok);
+        return;
+      }
+
+      // 6. Explicit Username token
+      if (!username && (tok.toLowerCase().startsWith('wali.') || tok.includes('@'))) {
+        username = tok.trim();
+        return;
+      }
+
+      // 7. Password token
+      if (!password && (tok.includes('#') || tok.includes('Secure') || (tok.length >= 8 && idx >= tokens.length - 2))) {
+        password = tok.trim();
+        return;
+      }
+
+      unusedTokens.push(tok);
+    });
+
+    if (unusedTokens.length > 0) {
+      const nameCand = unusedTokens.find(t => /[a-zA-Z]{3,}/.test(t) && !t.toLowerCase().startsWith('wali.'));
+      if (nameCand) {
+        name = nameCand;
+        const restTokens = unusedTokens.filter(t => t !== nameCand);
+        restTokens.forEach(t => {
+          if (!username && (t.toLowerCase().startsWith('wali') || /^[a-z0-9._-]+$/i.test(t))) {
+            username = t;
+          } else if (!password) {
+            password = t;
+          }
+        });
+      } else {
+        name = unusedTokens[0];
+      }
+    }
+
+    if (!name && rawTokens.length >= 2) {
+      name = rawTokens[1] || rawTokens[0];
+    }
+    if (!className) {
+      const clsCand = rawTokens.find(t => isClassToken(t));
+      className = clsCand ? clsCand.toUpperCase().replace(/\s+/g, '') : '7A';
+    }
+
+    const cleanClassCode = className ? className.toUpperCase().replace(/[^A-Z0-9]/g, '') : '7A';
+
+    if (!username) {
+      username = `wali.${cleanClassCode.toLowerCase()}`;
+    }
+    if (!password) {
+      password = 'wali123#Secure';
+    }
+
+    const isValid = Boolean(name && name.length >= 3 && cleanClassCode);
+    let errorReason: string | undefined;
+    if (!name || name.length < 3) errorReason = 'Nama wali kelas minimal 3 karakter';
+    else if (!cleanClassCode) errorReason = 'Kelas binaan wajib ditentukan';
+
+    return {
+      name,
+      nip,
+      className: cleanClassCode,
+      gender,
+      phone,
+      username,
+      password,
+      isValid,
+      isHeader: false,
+      errorReason
+    };
+  };
+
+  // Live parsing preview for teacher bulk import
+  const parsedTeacherImportPreview = useMemo(() => {
+    const lines = teacherImportText.trim().split('\n').filter(l => l.trim().length > 0);
+    const results: Array<ReturnType<typeof parseTeacherImportLine> & { idx: number }> = [];
+    let validIdx = 1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const parsed = parseTeacherImportLine(lines[i], validIdx);
+      if (!parsed.isHeader && (parsed.name || parsed.className)) {
+        results.push({
+          idx: validIdx++,
+          ...parsed
+        });
+      }
+    }
+    return results;
+  }, [teacherImportText]);
 
   // Filtered Students
   const filteredStudents = useMemo(() => {
@@ -872,6 +1093,7 @@ export const AdminDashboard: React.FC = () => {
           attendanceNumber: item.attendanceNumber,
           name: item.name,
           gender: item.gender,
+          religion: item.religion || 'Islam',
           className: item.className,
           parentName: item.parentName || undefined,
           parentPhone: item.parentPhone || undefined
@@ -892,18 +1114,18 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Download Sample Template CSV (7 Columns matching updated schema)
+  // Download Sample Template CSV (8 Kolom Standar Termasuk Agama)
   const handleDownloadTemplate = () => {
     const csvContent = "data:text/csv;charset=utf-8," + 
-      "NIS,No Absen,Nama Siswa,Jenis Kelamin (L/P),Kelas,Nama Orang Tua,No HP Orang Tua\n" +
-      "23451,01,Ahmad Fauzan,L,7A,Bpk. Fauzan,081234567801\n" +
-      "23452,02,Annisa Rahma,P,7A,Ibu Rahma,081234567802\n" +
-      "23453,03,Bayu Kurniawan,L,7B,Bpk. Kurniawan,081234567803\n" +
-      "23454,04,Cinta Laura Santoso,P,7C,Ibu Laura,081234567804\n" +
-      "23455,05,Doni Pratama Putra,L,8A,Bpk. Pratama,081234567805\n" +
-      "23456,06,Eka Putri Lestari,P,8B,Ibu Lestari,081234567806\n" +
-      "23457,07,Farhan Ramadhan,L,9A,Bpk. Ramadhan,081234567807\n" +
-      "23458,08,Gita Permata Sari,P,9B,Ibu Permata,081234567808";
+      "NIS,No Absen,Nama Siswa,Jenis Kelamin (L/P),Agama,Kelas,Nama Orang Tua,No HP Orang Tua\n" +
+      "23451,01,Ahmad Fauzan,L,Islam,7A,Bpk. Fauzan,081234567801\n" +
+      "23452,02,Annisa Rahma,P,Islam,7A,Ibu Rahma,081234567802\n" +
+      "23453,03,Bayu Kurniawan,L,Kristen,7B,Bpk. Kurniawan,081234567803\n" +
+      "23454,04,Cinta Laura Santoso,P,Katolik,7C,Ibu Laura,081234567804\n" +
+      "23455,05,Doni Pratama Putra,L,Hindu,8A,Bpk. Pratama,081234567805\n" +
+      "23456,06,Eka Putri Lestari,P,Islam,8B,Ibu Lestari,081234567806\n" +
+      "23457,07,Farhan Ramadhan,L,Islam,9A,Bpk. Ramadhan,081234567807\n" +
+      "23458,08,Gita Permata Sari,P,Islam,9B,Ibu Permata,081234567808";
     
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -914,19 +1136,19 @@ export const AdminDashboard: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  // Download Sample Template Excel (.xlsx) matching latest database schema and account generator rules
+  // Download Sample Template Excel (.xlsx) matching latest database schema, religion column, and account generator rules
   const handleDownloadExcelTemplate = () => {
-    // Sheet 1: Data Siswa (7 Standar Kolom Database)
+    // Sheet 1: Data Siswa (8 Standar Kolom Database)
     const wsData = [
-      ['NIS', 'No Absen', 'Nama Siswa', 'Jenis Kelamin (L/P)', 'Kelas', 'Nama Orang Tua', 'No HP Orang Tua'],
-      ['23451', '01', 'Ahmad Fauzan', 'L', '7A', 'Bpk. Fauzan', '081234567801'],
-      ['23452', '02', 'Annisa Rahma', 'P', '7A', 'Ibu Rahma', '081234567802'],
-      ['23453', '03', 'Bayu Kurniawan', 'L', '7B', 'Bpk. Kurniawan', '081234567803'],
-      ['23454', '04', 'Cinta Laura Santoso', 'P', '7C', 'Ibu Laura', '081234567804'],
-      ['23455', '05', 'Doni Pratama Putra', 'L', '8A', 'Bpk. Pratama', '081234567805'],
-      ['23456', '06', 'Eka Putri Lestari', 'P', '8B', 'Ibu Lestari', '081234567806'],
-      ['23457', '07', 'Farhan Ramadhan', 'L', '9A', 'Bpk. Ramadhan', '081234567807'],
-      ['23458', '08', 'Gita Permata Sari', 'P', '9B', 'Ibu Permata', '081234567808']
+      ['NIS', 'No Absen', 'Nama Siswa', 'Jenis Kelamin (L/P)', 'Agama', 'Kelas', 'Nama Orang Tua', 'No HP Orang Tua'],
+      ['23451', '01', 'Ahmad Fauzan', 'L', 'Islam', '7A', 'Bpk. Fauzan', '081234567801'],
+      ['23452', '02', 'Annisa Rahma', 'P', 'Islam', '7A', 'Ibu Rahma', '081234567802'],
+      ['23453', '03', 'Bayu Kurniawan', 'L', 'Kristen', '7B', 'Bpk. Kurniawan', '081234567803'],
+      ['23454', '04', 'Cinta Laura Santoso', 'P', 'Katolik', '7C', 'Ibu Laura', '081234567804'],
+      ['23455', '05', 'Doni Pratama Putra', 'L', 'Hindu', '8A', 'Bpk. Pratama', '081234567805'],
+      ['23456', '06', 'Eka Putri Lestari', 'P', 'Islam', '8B', 'Ibu Lestari', '081234567806'],
+      ['23457', '07', 'Farhan Ramadhan', 'L', 'Islam', '9A', 'Bpk. Ramadhan', '081234567807'],
+      ['23458', '08', 'Gita Permata Sari', 'P', 'Islam', '9B', 'Ibu Permata', '081234567808']
     ];
     
     // Explicitly treat strings as text to protect leading zeros ('01', '0812...')
@@ -943,6 +1165,7 @@ export const AdminDashboard: React.FC = () => {
       { wch: 12 }, // No Absen
       { wch: 30 }, // Nama Siswa
       { wch: 22 }, // Jenis Kelamin
+      { wch: 16 }, // Agama
       { wch: 12 }, // Kelas
       { wch: 28 }, // Nama Orang Tua
       { wch: 20 }  // No HP Orang Tua
@@ -952,21 +1175,22 @@ export const AdminDashboard: React.FC = () => {
     const guideData = [
       ['PANDUAN LENGKAP TEMPLATE IMPOR DATA SISWA (7 KAIH SMPN 2 KASIHAN)'],
       [''],
-      ['No', 'Nama Kolom', 'Keterangan Database', 'Kaidah Penulisan', 'Otomatisasi Akun Login'],
+      ['No', 'Nama Kolom', 'Keterangan Database', 'Kaidah Penulisan', 'Otomatisasi Akun Login & Profil'],
       ['1', 'NIS', 'Nomor Induk Siswa (Wajib)', 'Angka/Teks unik siswa (cth: 23451)', 'Username Login Siswa: [NIS] | Sandi: siswa[NIS]'],
       ['2', 'No Absen', 'Nomor Urut Presensi Kelas', '2 digit atau angka (cth: 01, 02, ...)', 'Disimpan sebagai Nomor Absen Siswa'],
       ['3', 'Nama Siswa', 'Nama Lengkap Siswa (Wajib)', 'Nama lengkap sesuai rapor', 'Nama Profil Siswa'],
       ['4', 'Jenis Kelamin (L/P)', 'Jenis Kelamin Siswa', 'Isi L (Laki-laki) atau P (Perempuan)', 'Avatar & profil otomatis sesuai gender'],
-      ['5', 'Kelas', 'Rombel / Kelas', 'Format 7A, 7B, 8A, 9A, dll.', 'Menghubungkan siswa dengan Wali Kelas'],
-      ['6', 'Nama Orang Tua', 'Nama Ayah/Ibu/Wali', 'Nama lengkap orang tua siswa', 'Username Ortu: ortu.[NIS] | Sandi: ortu[NIS]'],
-      ['7', 'No HP Orang Tua', 'No. WhatsApp/HP Orang Tua', 'Format 08xxxx atau 62xxxx', 'Disimpan untuk pengiriman rekap kredensial WhatsApp']
+      ['5', 'Agama', 'Agama Siswa (Wajib/Opsional)', 'Pilihan: Islam, Kristen, Katolik, Hindu, Buddha, Konghucu (Default: Islam)', 'Menyesuaikan panduan ibadah 7 KAIH sesuai agama siswa'],
+      ['6', 'Kelas', 'Rombel / Kelas', 'Format 7A, 7B, 8A, 9A, dll.', 'Menghubungkan siswa dengan Wali Kelas'],
+      ['7', 'Nama Orang Tua', 'Nama Ayah/Ibu/Wali', 'Nama lengkap orang tua siswa', 'Username Ortu: ortu.[NIS] | Sandi: ortu[NIS]'],
+      ['8', 'No HP Orang Tua', 'No. WhatsApp/HP Orang Tua', 'Format 08xxxx atau 62xxxx', 'Disimpan untuk pengiriman rekap kredensial WhatsApp']
     ];
     const wsGuide = XLSX.utils.aoa_to_sheet(guideData);
     wsGuide['!cols'] = [
       { wch: 6 },
       { wch: 22 },
       { wch: 30 },
-      { wch: 38 },
+      { wch: 42 },
       { wch: 55 }
     ];
 
@@ -1024,7 +1248,7 @@ export const AdminDashboard: React.FC = () => {
 
           // If row contains valid name or NIS
           if (parsed.name && parsed.name.length >= 2) {
-            parsedLines.push(`${parsed.nis}, ${parsed.noAbsen || String(validIdx).padStart(2, '0')}, ${parsed.name}, ${parsed.gender}, ${parsed.className}, ${parsed.parentName}, ${parsed.parentPhone}`);
+            parsedLines.push(`${parsed.nis}, ${parsed.noAbsen || String(validIdx).padStart(2, '0')}, ${parsed.name}, ${parsed.gender}, ${parsed.religion || 'Islam'}, ${parsed.className}, ${parsed.parentName}, ${parsed.parentPhone}`);
             validIdx++;
           }
         }
@@ -1049,14 +1273,14 @@ export const AdminDashboard: React.FC = () => {
 
   const handleLoadSampleImport = () => {
     setImportText(
-`23451, 01, Ahmad Fauzan, L, 7A, Bpk. Fauzan, 081234567801
-23452, 02, Annisa Rahma, P, 7A, Ibu Rahma, 081234567802
-23453, 03, Bayu Kurniawan, L, 7B, Bpk. Kurniawan, 081234567803
-23454, 04, Cinta Laura Santoso, P, 7C, Ibu Laura, 081234567804
-23455, 05, Doni Pratama Putra, L, 8A, Bpk. Pratama, 081234567805
-23456, 06, Eka Putri Lestari, P, 8B, Ibu Lestari, 081234567806
-23457, 07, Farhan Ramadhan, L, 9A, Bpk. Ramadhan, 081234567807
-23458, 08, Gita Permata Sari, P, 9B, Ibu Permata, 081234567808`
+`23451, 01, Ahmad Fauzan, L, Islam, 7A, Bpk. Fauzan, 081234567801
+23452, 02, Annisa Rahma, P, Islam, 7A, Ibu Rahma, 081234567802
+23453, 03, Bayu Kurniawan, L, Kristen, 7B, Bpk. Kurniawan, 081234567803
+23454, 04, Cinta Laura Santoso, P, Katolik, 7C, Ibu Laura, 081234567804
+23455, 05, Doni Pratama Putra, L, Hindu, 8A, Bpk. Pratama, 081234567805
+23456, 06, Eka Putri Lestari, P, Islam, 8B, Ibu Lestari, 081234567806
+23457, 07, Farhan Ramadhan, L, Islam, 9A, Bpk. Ramadhan, 081234567807
+23458, 08, Gita Permata Sari, P, Islam, 9B, Ibu Permata, 081234567808`
     );
     setImportSuccessCount(null);
   };
@@ -1064,6 +1288,199 @@ export const AdminDashboard: React.FC = () => {
   const handleClearImport = () => {
     setImportText('');
     setImportSuccessCount(null);
+  };
+
+  // Download Sample Template Excel (.xlsx) for Wali Kelas & Teachers
+  const handleDownloadTeacherExcelTemplate = () => {
+    // Sheet 1: Data Wali Kelas
+    const wsData = [
+      ['No', 'Nama Lengkap & Gelar', 'NIP / NUPTK', 'Kelas Binaan', 'Jenis Kelamin (L/P)', 'No HP / WhatsApp', 'Username Login', 'Password Login'],
+      ['1', 'Dra. Hj. Siti Aminah, M.Pd.', '197505102005012003', '7A', 'P', '081234567801', 'wali.7a', 'wali123#Secure'],
+      ['2', 'Bambang Sudarsono, S.Pd.', '198003152008011012', '7B', 'L', '081234567802', 'wali.7b', 'wali123#Secure'],
+      ['3', 'Rina Wijayanti, S.Pd.', '198509202010012015', '7C', 'P', '081234567803', 'wali.7c', 'wali123#Secure'],
+      ['4', 'Drs. H. Suryanto, M.Pd.', '196811251994031005', '8A', 'L', '081234567804', 'wali.8a', 'wali123#Secure'],
+      ['5', 'Nurul Hidayati, S.Pd.', '198207182006042021', '8B', 'P', '081234567805', 'wali.8b', 'wali123#Secure'],
+      ['6', 'Agus Prasetyo, S.Pd.', '198704122011011008', '8C', 'L', '081234567806', 'wali.8c', 'wali123#Secure'],
+      ['7', 'Sri Wahyuni, M.Pd.', '197208141998022001', '9A', 'P', '081234567807', 'wali.9a', 'wali123#Secure'],
+      ['8', 'Joko Purnomo, S.Pd.', '198302052009021004', '9B', 'L', '081234567808', 'wali.9b', 'wali123#Secure'],
+      ['9', 'Dewi Sartika, S.Pd.', '199010102015032002', '9C', 'P', '081234567809', 'wali.9c', 'wali123#Secure']
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    Object.keys(ws).forEach(cellKey => {
+      if (cellKey.startsWith('!')) return;
+      if (ws[cellKey] && typeof ws[cellKey].v === 'string') {
+        ws[cellKey].t = 's';
+      }
+    });
+
+    ws['!cols'] = [
+      { wch: 6 },  // No
+      { wch: 32 }, // Nama Lengkap
+      { wch: 24 }, // NIP
+      { wch: 14 }, // Kelas Binaan
+      { wch: 20 }, // Jenis Kelamin
+      { wch: 20 }, // No HP
+      { wch: 18 }, // Username
+      { wch: 18 }  // Password
+    ];
+
+    // Sheet 2: Petunjuk Format Akun Wali
+    const guideData = [
+      ['PANDUAN TEMPLATE IMPOR DATA WALI KELAS & GURU PEMBIMBING (7 KAIH SMPN 2 KASIHAN)'],
+      [''],
+      ['No', 'Nama Kolom', 'Keterangan & Sifat', 'Contoh Penulisan', 'Otomatisasi Akun Login & Hak Akses'],
+      ['1', 'No', 'Nomor Urut', '1, 2, 3, ...', 'Nomor urut referensi data'],
+      ['2', 'Nama Lengkap & Gelar', 'Nama Wali Kelas (Wajib)', 'Dra. Hj. Siti Aminah, M.Pd.', 'Ditampilkan pada profil guru, tanda tangan laporan PDF, dan kop rapor'],
+      ['3', 'NIP / NUPTK', 'Nomor Induk Pegawai (Opsional/Dianjurkan)', '197505102005012003', 'Dicantumkan pada titimangsa pengesahan & tanda tangan resmi rapor 7 KAIH'],
+      ['4', 'Kelas Binaan', 'Rombel yang diampu (Wajib)', '7A, 7B, 8A, 9A, dll.', 'Menghubungkan wali kelas dengan seluruh siswa di kelas binaan tersebut'],
+      ['5', 'Jenis Kelamin (L/P)', 'Jenis Kelamin Guru (Opsional)', 'L (Laki-laki) atau P (Perempuan)', 'Menyesuaikan avatar profil guru (Putra/Putri)'],
+      ['6', 'No HP / WhatsApp', 'Nomor WhatsApp Guru (Opsional)', '081234567801', 'Memudahkan komunikasi dan notifikasi bimbingan'],
+      ['7', 'Username Login', 'Username Akun Guru (Opsional)', 'wali.7a atau 197505102005012003', 'Jika dikosongkan, otomatis dibuatkan format "wali.[kelas]" (cth: wali.7a)'],
+      ['8', 'Password Login', 'Kata Sandi Akun Guru (Opsional)', 'wali123#Secure', 'Jika dikosongkan, otomatis menggunakan standar "wali123#Secure"']
+    ];
+
+    const wsGuide = XLSX.utils.aoa_to_sheet(guideData);
+    wsGuide['!cols'] = [
+      { wch: 6 },
+      { wch: 24 },
+      { wch: 28 },
+      { wch: 32 },
+      { wch: 65 }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Data_Wali_Kelas');
+    XLSX.utils.book_append_sheet(wb, wsGuide, 'Petunjuk_Format_Akun_Wali');
+    XLSX.writeFile(wb, 'template_import_walikelas_7kaih_smpn2kasihan.xlsx');
+  };
+
+  const handleDownloadTeacherCSVTemplate = () => {
+    const csvContent = "data:text/csv;charset=utf-8," + 
+      "No,Nama Lengkap & Gelar,NIP / NUPTK,Kelas Binaan,Jenis Kelamin (L/P),No HP / WhatsApp,Username Login,Password Login\n" +
+      "1,Dra. Hj. Siti Aminah, M.Pd.,197505102005012003,7A,P,081234567801,wali.7a,wali123#Secure\n" +
+      "2,Bambang Sudarsono, S.Pd.,198003152008011012,7B,L,081234567802,wali.7b,wali123#Secure\n" +
+      "3,Rina Wijayanti, S.Pd.,198509202010012015,7C,P,081234567803,wali.7c,wali123#Secure\n" +
+      "4,Drs. H. Suryanto, M.Pd.,196811251994031005,8A,L,081234567804,wali.8a,wali123#Secure\n" +
+      "5,Nurul Hidayati, S.Pd.,198207182006042021,8B,P,081234567805,wali.8b,wali123#Secure\n" +
+      "6,Agus Prasetyo, S.Pd.,198704122011011008,8C,L,081234567806,wali.8c,wali123#Secure\n" +
+      "7,Sri Wahyuni, M.Pd.,197208141998022001,9A,P,081234567807,wali.9a,wali123#Secure\n" +
+      "8,Joko Purnomo, S.Pd.,198302052009021004,9B,L,081234567808,wali.9b,wali123#Secure\n" +
+      "9,Dewi Sartika, S.Pd.,199010102015032002,9C,P,081234567809,wali.9c,wali123#Secure";
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "template_import_walikelas_7kaih_smpn2kasihan.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleTeacherExcelFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setTeacherSelectedFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const buffer = evt.target?.result;
+        if (!buffer) return;
+
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const targetSheetName = workbook.SheetNames.find(n => {
+          const lower = n.toLowerCase();
+          return lower.includes('wali') || lower.includes('guru') || lower.includes('data');
+        }) || workbook.SheetNames[0];
+        
+        const worksheet = workbook.Sheets[targetSheetName];
+        const rawRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+
+        const parsedLines: string[] = [];
+        let validIdx = 1;
+
+        for (let r = 0; r < rawRows.length; r++) {
+          const row = rawRows[r];
+          if (!row || row.length === 0) continue;
+
+          const joinedRow = row.map((val: any) => cleanExcelCellValue(val)).join('\t');
+          if (!joinedRow.trim()) continue;
+
+          const parsed = parseTeacherImportLine(joinedRow, validIdx);
+          if (parsed.isHeader) continue;
+
+          if (parsed.name && parsed.name.length >= 2) {
+            parsedLines.push(`${validIdx}, ${parsed.name}, ${parsed.nip || ''}, ${parsed.className}, ${parsed.gender}, ${parsed.phone || ''}, ${parsed.username}, ${parsed.password}`);
+            validIdx++;
+          }
+        }
+
+        if (parsedLines.length > 0) {
+          setTeacherImportText(parsedLines.join('\n'));
+          setTeacherImportSuccessCount(null);
+        } else {
+          alert('Tidak ada baris data wali kelas yang ditemukan pada file Excel. Pastikan file memiliki data nama guru dan kelas binaan.');
+        }
+      } catch (err) {
+        console.error('Error parsing teacher Excel file:', err);
+        alert('Gagal memproses file. Pastikan file berformat .xlsx, .xls, atau .csv yang valid.');
+      } finally {
+        if (teacherExcelFileInputRef.current) {
+          teacherExcelFileInputRef.current.value = '';
+        }
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleLoadSampleTeacherImport = () => {
+    setTeacherImportText(
+`1, Dra. Hj. Siti Aminah, M.Pd., 197505102005012003, 7A, P, 081234567801, wali.7a, wali123#Secure
+2, Bambang Sudarsono, S.Pd., 198003152008011012, 7B, L, 081234567802, wali.7b, wali123#Secure
+3, Rina Wijayanti, S.Pd., 198509202010012015, 7C, P, 081234567803, wali.7c, wali123#Secure
+4, Drs. H. Suryanto, M.Pd., 196811251994031005, 8A, L, 081234567804, wali.8a, wali123#Secure
+5, Nurul Hidayati, S.Pd., 198207182006042021, 8B, P, 081234567805, wali.8b, wali123#Secure
+6, Agus Prasetyo, S.Pd., 198704122011011008, 8C, L, 081234567806, wali.8c, wali123#Secure
+7, Sri Wahyuni, M.Pd., 197208141998022001, 9A, P, 081234567807, wali.9a, wali123#Secure
+8, Joko Purnomo, S.Pd., 198302052009021004, 9B, L, 081234567808, wali.9b, wali123#Secure
+9, Dewi Sartika, S.Pd., 199010102015032002, 9C, P, 081234567809, wali.9c, wali123#Secure`
+    );
+    setTeacherImportSuccessCount(null);
+  };
+
+  const handleClearTeacherImport = () => {
+    setTeacherImportText('');
+    setTeacherImportSuccessCount(null);
+  };
+
+  const handleProcessTeacherImport = async () => {
+    setTeacherImporting(true);
+    setTeacherImportSuccessCount(null);
+    try {
+      const validItems = parsedTeacherImportPreview.filter(p => p.isValid);
+      if (validItems.length === 0) {
+        alert('Tidak ada baris data wali kelas yang valid untuk diimpor. Pastikan minimal mengisi Nama Guru dan Kelas Binaan.');
+        return;
+      }
+
+      const count = await importTeachersBulk(validItems.map(item => ({
+        name: item.name,
+        nip: item.nip,
+        className: item.className,
+        gender: item.gender,
+        phone: item.phone,
+        username: item.username,
+        password: item.password
+      })));
+
+      setTeacherImportSuccessCount(count);
+    } catch (err) {
+      console.error('Teacher import error:', err);
+      alert('Terjadi kesalahan saat memproses impor data wali kelas. Silakan coba lagi.');
+    } finally {
+      setTeacherImporting(false);
+    }
   };
 
   // Copy WhatsApp Broadcast Text for Selected Class
@@ -1306,7 +1723,7 @@ export const AdminDashboard: React.FC = () => {
                 }`}
               >
                 <Upload className="w-4 h-4" />
-                <span>Impor Data Siswa</span>
+                <span>Impor Data (Siswa & Wali)</span>
               </button>
 
               <button
@@ -2189,13 +2606,39 @@ export const AdminDashboard: React.FC = () => {
                 </p>
               </div>
 
-              <button
-                onClick={() => handleOpenAddModal('walikelas')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>Tambah Wali Kelas Baru</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleDownloadTeacherExcelTemplate}
+                  title="Unduh Format Spreadsheet Excel untuk Impor Wali Kelas"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all cursor-pointer active:scale-95"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Unduh Template Excel</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImportTabMode('teachers');
+                    setActiveMenu('import');
+                  }}
+                  title="Buka menu impor massal wali kelas"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer active:scale-95"
+                >
+                  <Upload className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>Impor Excel Wali Kelas</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddModal('walikelas')}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Tambah Manual</span>
+                </button>
+              </div>
             </div>
 
             {/* Teacher Cards Grid */}
@@ -2294,9 +2737,46 @@ export const AdminDashboard: React.FC = () => {
           <AdminReports />
         )}
 
-        {/* ================= 6. IMPOR DATA SISWA MASSAL (XLS/XLSX/CSV) ================= */}
+        {/* ================= 6. IMPOR DATA MASSAL (SISWA & WALI) ================= */}
         {activeMenu === 'import' && (
-          <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+          <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-5">
+            {/* Mode Switcher: Siswa & Orang Tua vs Wali Kelas & Guru */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl w-full sm:w-fit border border-slate-200 dark:border-slate-700/80">
+                <button
+                  type="button"
+                  onClick={() => setImportTabMode('students')}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    importTabMode === 'students'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span>👥 Impor Siswa & Orang Tua</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setImportTabMode('teachers')}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    importTabMode === 'teachers'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>👩‍🏫 Impor Wali Kelas & Guru</span>
+                </button>
+              </div>
+
+              <span className="text-[11px] text-slate-500 font-medium">
+                {importTabMode === 'students' ? 'Format Excel Siswa & Akun Ortu Otomatis' : 'Format Excel Wali Kelas & Guru Pembimbing'}
+              </span>
+            </div>
+
+            {importTabMode === 'students' ? (
+              <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
                 <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
@@ -2381,12 +2861,12 @@ export const AdminDashboard: React.FC = () => {
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200 text-xs font-bold">
                   <FileSpreadsheet className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span>Format Standar 7 Kolom Data Siswa:</span>
+                  <span>Format Standar 8 Kolom Data Siswa (Termasuk Agama):</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText("NIS,No Absen,Nama Siswa,Jenis Kelamin (L/P),Kelas,Nama Orang Tua,No HP Orang Tua");
+                    navigator.clipboard.writeText("NIS,No Absen,Nama Siswa,Jenis Kelamin (L/P),Agama,Kelas,Nama Orang Tua,No HP Orang Tua");
                     alert('Format header kolom berhasil disalin ke clipboard!');
                   }}
                   className="inline-flex items-center gap-1 text-[11px] text-purple-700 dark:text-purple-300 hover:text-purple-900 font-semibold bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-800 shadow-2xs hover:bg-purple-50 transition-all cursor-pointer"
@@ -2396,7 +2876,7 @@ export const AdminDashboard: React.FC = () => {
                 </button>
               </div>
 
-              {/* 7 Columns Visual Badges */}
+              {/* 8 Columns Visual Badges */}
               <div className="flex flex-wrap gap-1.5 font-sans">
                 <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 shadow-2xs">
                   1. NIS <span className="text-rose-500">*</span>
@@ -2410,30 +2890,33 @@ export const AdminDashboard: React.FC = () => {
                 <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-sky-700 dark:text-sky-300 shadow-2xs">
                   4. JK (L/P)
                 </span>
+                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 shadow-2xs">
+                  5. Agama
+                </span>
                 <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-blue-700 dark:text-blue-300 shadow-2xs">
-                  5. Kelas (7A-9F)
+                  6. Kelas (7A-9F)
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-rose-700 dark:text-rose-300 shadow-2xs">
-                  6. Nama Orang Tua
+                  7. Nama Orang Tua
                 </span>
-                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 shadow-2xs">
-                  7. No HP Ortu (WA)
+                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-teal-700 dark:text-teal-300 shadow-2xs">
+                  8. No HP Ortu (WA)
                 </span>
               </div>
 
               <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 space-y-1">
                 <p className="font-mono text-[11px] text-purple-950 dark:text-purple-200 overflow-x-auto whitespace-nowrap">
-                  NIS, No Absen, Nama Siswa, Jenis Kelamin (L/P), Kelas, Nama Orang Tua, No HP Orang Tua
+                  NIS, No Absen, Nama Siswa, Jenis Kelamin (L/P), Agama, Kelas, Nama Orang Tua, No HP Orang Tua
                 </p>
                 <p className="font-mono text-[10px] text-slate-500 dark:text-slate-400 overflow-x-auto whitespace-nowrap">
-                  Contoh: 23451, 01, Ahmad Fauzan, L, 7A, Bpk. Fauzan, 081234567801
+                  Contoh: 23451, 01, Ahmad Fauzan, L, Islam, 7A, Bpk. Fauzan, 081234567801
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-slate-600 dark:text-slate-400 pt-0.5">
                 <div className="flex items-start gap-1.5">
                   <div className="w-1.5 h-1.5 rounded-full bg-purple-600 mt-1.5 shrink-0" />
-                  <p><strong>Akun Siswa Otomatis:</strong> User <code>[NIS]</code> | Sandi <code>siswa[NIS]</code></p>
+                  <p><strong>Akun Siswa Otomatis:</strong> User <code>[NIS]</code> | Sandi <code>siswa[NIS]</code> (Panduan ibadah menyesuaikan agama)</p>
                 </div>
                 <div className="flex items-start gap-1.5">
                   <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
@@ -2492,6 +2975,7 @@ export const AdminDashboard: React.FC = () => {
                           <th className="p-2.5 w-10">No</th>
                           <th className="p-2.5">Siswa & NIS</th>
                           <th className="p-2.5 text-center w-20">No. Absen</th>
+                          <th className="p-2.5 text-center w-20">Agama</th>
                           <th className="p-2.5 text-center w-16">Kelas</th>
                           <th className="p-2.5">Kredensial Siswa</th>
                           <th className="p-2.5">Orang Tua Terhubung</th>
@@ -2528,6 +3012,11 @@ export const AdminDashboard: React.FC = () => {
                               ) : (
                                 <span className="text-slate-400 text-[10px] italic">-</span>
                               )}
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <span className="inline-block px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800">
+                                {row.religion || 'Islam'}
+                              </span>
                             </td>
                             <td className="p-2.5 text-center">
                               <span className="inline-block px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800">
@@ -2623,8 +3112,278 @@ export const AdminDashboard: React.FC = () => {
                 </button>
               </div>
             </div>
-          </div>
-        )}
+            </div>
+          ) : (
+            /* ================= IMPORT WALI KELAS & GURU ================= */
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <UserCheck className="w-5 h-5 text-emerald-600" />
+                    <span>Impor Data Wali Kelas & Guru Format Excel (.XLS / .XLSX / .CSV)</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Unggah spreadsheet Excel atau tempel daftar guru: Akun wali kelas otomatis digenerate & terhubung ke kelas binaan untuk monitoring jurnal 7 KAIH.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleLoadSampleTeacherImport}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold hover:bg-emerald-100 transition-all active:scale-95"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Muat Contoh</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadTeacherExcelTemplate}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs active:scale-95"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Unduh Template Excel (.xlsx)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadTeacherCSVTemplate}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all active:scale-95"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Unduh CSV</span>
+                  </button>
+
+                  {teacherImportText && (
+                    <button
+                      type="button"
+                      onClick={handleClearTeacherImport}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-medium transition-all"
+                      title="Kosongkan area input"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Bersihkan</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Upload Zone & Excel File Picker */}
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border-2 border-dashed border-emerald-300 dark:border-emerald-800/80 hover:border-emerald-500 transition-colors">
+                <input
+                  type="file"
+                  ref={teacherExcelFileInputRef}
+                  accept=".xlsx, .xls, .csv"
+                  className="hidden"
+                  onChange={handleTeacherExcelFileUpload}
+                />
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600 shrink-0">
+                      <FileSpreadsheet className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                        {teacherSelectedFileName ? `File Terpilih: ${teacherSelectedFileName}` : 'Punya file Excel daftar Wali Kelas dari sekolah?'}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Mendukung format Microsoft Excel (.xlsx, .xls) dan CSV (kolom Nama, NIP, Kelas Binaan, Jenis Kelamin, No HP).
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => teacherExcelFileInputRef.current?.click()}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all shrink-0 cursor-pointer"
+                  >
+                    {teacherSelectedFileName ? 'Ganti File Excel' : 'Pilih File Excel...'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Textarea Import Input & Instructions */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                <div className="lg:col-span-8 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <span>Data Teks / Spreadsheet (1 baris = 1 Wali Kelas):</span>
+                      <span className="text-[10px] font-normal text-slate-400">(Bisa copy-paste langsung dari Excel / Word)</span>
+                    </label>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {teacherImportText.trim() ? teacherImportText.trim().split('\n').length : 0} baris terdeteksi
+                    </span>
+                  </div>
+                  <textarea
+                    rows={8}
+                    value={teacherImportText}
+                    onChange={(e) => {
+                      setTeacherImportText(e.target.value);
+                      setTeacherImportSuccessCount(null);
+                    }}
+                    placeholder={`No, Nama Lengkap & Gelar, NIP, Kelas Binaan, L/P, No HP, Username, Password\n1, Dra. Hj. Siti Aminah, M.Pd., 197505102005012003, 7A, P, 081234567801, wali.7a, wali123#Secure\n2, Bambang Sudarsono, S.Pd., 198003152008011012, 7B, L, 081234567802, wali.7b, wali123#Secure`}
+                    className="w-full text-xs font-mono p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden resize-y"
+                  />
+                </div>
+
+                <div className="lg:col-span-4 p-3.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/50 text-xs space-y-2">
+                  <h5 className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Format Kolom Otomatis:</span>
+                  </h5>
+                  <ul className="list-disc list-inside space-y-1 text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
+                    <li><strong>Nama Guru:</strong> Nama lengkap beserta gelar akademik (mis: Dra. Hj. Siti Aminah, M.Pd.).</li>
+                    <li><strong>NIP:</strong> Nomor Induk Pegawai 18 digit untuk tanda tangan rapor (opsional).</li>
+                    <li><strong>Kelas Binaan:</strong> Kode rombel yang diampu (cth: <strong>7A, 7B, 8C, 9A</strong>).</li>
+                    <li><strong>Jenis Kelamin:</strong> L / P untuk penyesuaian foto avatar.</li>
+                    <li><strong>No WhatsApp:</strong> Nomor HP untuk kontak bimbingan siswa.</li>
+                    <li><strong>Username:</strong> Otomatis dibuatkan format <code>wali.[kelas]</code> (cth: <code>wali.7a</code>) jika dikosongkan.</li>
+                    <li><strong>Password:</strong> Otomatis <code>wali123#Secure</code> jika tidak diisi.</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Preview Table */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <span>Pratinjau Hasil Pembacaan Data ({parsedTeacherImportPreview.length} Guru)</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-medium">
+                      {parsedTeacherImportPreview.filter(p => p.isValid).length} Valid
+                    </span>
+                    {parsedTeacherImportPreview.filter(p => !p.isValid).length > 0 && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-medium">
+                        {parsedTeacherImportPreview.filter(p => !p.isValid).length} Perlu Perbaikan
+                      </span>
+                    )}
+                  </h4>
+                </div>
+
+                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden overflow-x-auto max-h-64 shadow-xs">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 dark:bg-slate-800/90 text-slate-600 dark:text-slate-400 font-bold sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="p-2.5 w-10 text-center">No</th>
+                        <th className="p-2.5">Nama Guru & Gelar</th>
+                        <th className="p-2.5">NIP</th>
+                        <th className="p-2.5">Kelas Binaan</th>
+                        <th className="p-2.5">L/P</th>
+                        <th className="p-2.5">No WhatsApp</th>
+                        <th className="p-2.5">Username Login</th>
+                        <th className="p-2.5">Kata Sandi</th>
+                        <th className="p-2.5 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-[11px]">
+                      {parsedTeacherImportPreview.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="p-6 text-center text-slate-400 font-sans">
+                            Belum ada baris data. Salin data atau unggah spreadsheet Excel di atas.
+                          </td>
+                        </tr>
+                      ) : (
+                        parsedTeacherImportPreview.map((item) => (
+                          <tr
+                            key={item.idx}
+                            className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 ${
+                              !item.isValid ? 'bg-rose-50/50 dark:bg-rose-950/20' : ''
+                            }`}
+                          >
+                            <td className="p-2.5 text-center text-slate-400">{item.idx}</td>
+                            <td className="p-2.5 font-sans font-bold text-slate-900 dark:text-white">
+                              {item.name || <span className="text-rose-500 italic font-normal">Nama belum diisi</span>}
+                            </td>
+                            <td className="p-2.5 text-slate-600 dark:text-slate-300">
+                              {item.nip || <span className="text-slate-400 italic">-</span>}
+                            </td>
+                            <td className="p-2.5 font-bold text-emerald-600 dark:text-emerald-400">
+                              {item.className}
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                item.gender === 'L' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
+                              }`}>
+                                {item.gender}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-slate-600 dark:text-slate-300">
+                              {item.phone || <span className="text-slate-400 italic">-</span>}
+                            </td>
+                            <td className="p-2.5 text-indigo-600 dark:text-indigo-400 font-bold">
+                              {item.username}
+                            </td>
+                            <td className="p-2.5 text-slate-500">
+                              {item.password}
+                            </td>
+                            <td className="p-2.5 text-center font-sans">
+                              {item.isValid ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-full">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Siap</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950 px-2 py-0.5 rounded-full" title={item.errorReason}>
+                                  <AlertCircle className="w-3 h-3" />
+                                  <span>{item.errorReason || 'Tidak Valid'}</span>
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Success Notification Alert */}
+              {teacherImportSuccessCount !== null && (
+                <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div>
+                      <h4 className="text-xs font-bold">Berhasil Mengimpor {teacherImportSuccessCount} Data Wali Kelas!</h4>
+                      <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                        Akun wali kelas telah dibuat dan disinkronkan ke Cloud Firestore. Anda dapat melihatnya di Data Guru atau mencetak kartu sandi login.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => setActiveMenu('teachers')}
+                      className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 shadow-xs transition-all cursor-pointer"
+                    >
+                      Buka Data Guru
+                    </button>
+                    <button
+                      onClick={() => setActiveMenu('credentials')}
+                      className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 shadow-xs transition-all cursor-pointer"
+                    >
+                      Buka Kartu Sandi
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Button */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2">
+                <span className="text-[11px] text-slate-500">
+                  Data wali kelas langsung dihubungkan ke dashboard monitoring & Cloud Firestore.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleProcessTeacherImport}
+                  disabled={teacherImporting || parsedTeacherImportPreview.filter(p => p.isValid).length === 0}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>{teacherImporting ? 'Memproses Data...' : `Mulai Impor (${parsedTeacherImportPreview.filter(p => p.isValid).length} Wali Kelas & Guru)`}</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
         {/* ================= 6. GENERATE & CETAK KREDENSIAL LOGIN ================= */}
         {activeMenu === 'credentials' && (
@@ -3096,7 +3855,7 @@ export const AdminDashboard: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Ahmad Rizky Pratama"
+                  placeholder="Contoh: Muhammad Fajar Pratama"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-purple-500"

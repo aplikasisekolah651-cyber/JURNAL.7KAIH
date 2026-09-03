@@ -344,6 +344,316 @@ export class PDFReportGenerator {
   }
 
   /**
+   * Export detailed daily implementation logs (Log Harian / Matriks 7 KAIH) for a student with formal Kop Surat
+   */
+  static generateStudentDetailedReport(
+    student: User,
+    entries: JournalEntry[],
+    monthName: string,
+    customTeacherNote?: string,
+    customConfig?: SchoolSettings,
+    teacherInfo?: { name: string; nip?: string }
+  ) {
+    const config = customConfig || this.getActiveSchoolSettings();
+    const doc = new jsPDF('l', 'mm', 'a4'); // Landscape for rich 7 habits daily matrix
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 14;
+
+    // 1. Official Kop Surat
+    const startY = this.drawFormalKopSurat(doc, true, config);
+
+    // 2. Document Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('LEMBAR DETAIL PELAKSANAAN 7 KEBIASAAN ANAK INDONESIA HEBAT (7 KAIH)', pageWidth / 2, startY + 3, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.text(`Catatan & Verifikasi Log Harian Pembiasaan Siswa • Periode: ${monthName} • TA ${config.academicYear} (${config.semester})`, pageWidth / 2, startY + 7.5, { align: 'center' });
+
+    // 3. Student Identity Box
+    const infoY = startY + 10;
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(8);
+    doc.setDrawColor(203, 213, 225);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(margin, infoY, pageWidth - 2 * margin, 18, 2, 2, 'FD');
+
+    const totalDays = entries.length;
+    const avgScore = totalDays > 0 
+      ? Math.round(entries.reduce((acc, curr) => acc + curr.overallScore, 0) / totalDays)
+      : 0;
+
+    let kategori: HabitKategoriLevel = 'belum_terbiasa';
+    if (avgScore >= 80) kategori = 'sudah_terbiasa';
+    else if (avgScore >= 50) kategori = 'mulai_terbiasa';
+
+    const displayAbsen = student.attendanceNumber || student.noAbsen ? `No. ${student.attendanceNumber || student.noAbsen}` : '-';
+
+    // Left Column
+    doc.setFont('helvetica', 'bold');
+    doc.text('Nama Siswa', margin + 4, infoY + 5);
+    doc.text('NIS / Agama', margin + 4, infoY + 10);
+    doc.text('Kelas / Absen', margin + 4, infoY + 15);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text(`: ${student.name}`, margin + 30, infoY + 5);
+    doc.text(`: ${student.nis || student.nisn || '-'}  /  ${student.religion || 'Islam'}`, margin + 30, infoY + 10);
+    doc.text(`: ${student.className || '7A'}  /  ${displayAbsen}`, margin + 30, infoY + 15);
+
+    // Middle Column
+    const col2X = margin + 110;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Bulan Pemantauan', col2X, infoY + 5);
+    doc.text('Total Jurnal Terisi', col2X, infoY + 10);
+    doc.text('Tingkat Kepatuhan', col2X, infoY + 15);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text(`: ${monthName}`, col2X + 32, infoY + 5);
+    doc.text(`: ${totalDays} Hari Aktif`, col2X + 32, infoY + 10);
+    doc.text(`: ${avgScore}% (${KATEGORI_CONFIG[kategori].label})`, col2X + 32, infoY + 15);
+
+    // Right Column: Wali Kelas
+    const lookupTeacher = this.getTeacherForClass(student.className);
+    const displayTeacherName = teacherInfo?.name || lookupTeacher?.name || (student.className ? `Wali Kelas ${student.className}` : 'Wali Kelas');
+    const displayTeacherNip = teacherInfo?.nip 
+      ? `NIP. ${teacherInfo.nip}` 
+      : (lookupTeacher?.nip ? `NIP. ${lookupTeacher.nip}` : 'NIP. -');
+
+    const col3X = margin + 195;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Wali Kelas', col3X, infoY + 5);
+    doc.text('NIP Guru', col3X, infoY + 10);
+    doc.text('Status Validasi', col3X, infoY + 15);
+
+    const validCount = entries.filter(e => e.parentValidation?.status === 'valid' || e.parentValidation?.validated).length;
+    const validRate = totalDays > 0 ? Math.round((validCount / totalDays) * 100) : 0;
+
+    doc.setFont('helvetica', 'normal');
+    doc.text(`: ${displayTeacherName}`, col3X + 26, infoY + 5);
+    doc.text(`: ${displayTeacherNip}`, col3X + 26, infoY + 10);
+    doc.text(`: ${validCount}/${totalDays} Hari (${validRate}% Tervalidasi)`, col3X + 26, infoY + 15);
+
+    // 4. Sort entries by date ascending
+    const sortedEntries = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+
+    // 5. Daily Details Table (11 Columns)
+    const tableBody = sortedEntries.map((j, idx) => {
+      // Date formatting: DD/MM (Hari)
+      let dateLabel = j.date;
+      try {
+        const dObj = new Date(j.date);
+        const dayName = dObj.toLocaleDateString('id-ID', { weekday: 'short' });
+        const dateNum = j.date.split('-')[2] || j.date;
+        dateLabel = `${dateNum} (${dayName})`;
+      } catch (e) {
+        dateLabel = j.date;
+      }
+
+      // 1. Bangun Pagi
+      const bp = j.habits?.bangun_pagi;
+      const bpText = bp?.completed 
+        ? `✓ ${bp.values?.wake_time || bp.time || '04:30'}` 
+        : '✗ Belum';
+
+      // 2. Beribadah
+      const ib = j.habits?.ibadah;
+      let ibDetails: string[] = [];
+      if (ib?.values?.prayer_five_times) ibDetails.push('5 Waktu');
+      if (ib?.values?.quran_reading) ibDetails.push('Tadarus');
+      if (ib?.values?.night_prayer) ibDetails.push('Tahajud');
+      if (ib?.values?.duha_prayer) ibDetails.push('Dhuha');
+      const ibText = ib?.completed 
+        ? `✓ ${ibDetails.length > 0 ? ibDetails.join(', ') : 'Terlaksana'}`
+        : '✗ Belum';
+
+      // 3. Berolahraga
+      const ol = j.habits?.olahraga;
+      const olText = ol?.completed 
+        ? `✓ ${ol.values?.exercise_type || 'Senam'} (${ol.values?.duration || 20}m)`
+        : '✗ -';
+
+      // 4. Makan Sehat
+      const ms = j.habits?.makan_sehat;
+      let msItems: string[] = [];
+      if (ms?.values?.breakfast) msItems.push('Sarapan');
+      if (ms?.values?.water_glasses) msItems.push(`${ms.values.water_glasses}gls`);
+      const msText = ms?.completed 
+        ? `✓ ${msItems.length > 0 ? msItems.join(', ') : 'Bergizi'}`
+        : '✗ -';
+
+      // 5. Gemar Membaca
+      const mb = j.habits?.membaca;
+      const mbText = mb?.completed 
+        ? `✓ ${mb.values?.book_title ? (mb.values.book_title.length > 18 ? mb.values.book_title.substring(0, 16) + '..' : mb.values.book_title) : 'Literasi'}${mb.values?.pages_read ? ` (${mb.values.pages_read}hlm)` : ''}`
+        : '✗ -';
+
+      // 6. Bermasyarakat
+      const bm = j.habits?.bermasyarakat;
+      const bmText = bm?.completed 
+        ? `✓ ${bm.values?.activity_type ? (bm.values.activity_type.length > 18 ? bm.values.activity_type.substring(0, 16) + '..' : bm.values.activity_type) : (bm.values?.social_action ? bm.values.social_action.substring(0, 16) : 'Bantu Ortu')}`
+        : '✗ -';
+
+      // 7. Istirahat Cepat
+      const ist = j.habits?.istirahat;
+      const istText = ist?.completed 
+        ? `✓ ${ist.values?.sleep_time || '21:00'}`
+        : '✗ Belum';
+
+      // Score
+      const scoreText = `${j.overallScore}% (${j.completedCount || Object.values(j.habits || {}).filter(h => h?.completed).length}/7)`;
+
+      // Parent Validation
+      const isVal = j.parentValidation?.status === 'valid' || j.parentValidation?.validated;
+      const valText = isVal ? '✓ Valid' : j.parentValidation?.status === 'invalid' ? '✗ Tidak Sesuai' : '⏳ Menunggu';
+
+      return [
+        (idx + 1).toString(),
+        dateLabel,
+        bpText,
+        ibText,
+        olText,
+        msText,
+        mbText,
+        bmText,
+        istText,
+        scoreText,
+        valText
+      ];
+    });
+
+    if (tableBody.length === 0) {
+      tableBody.push([
+        '-',
+        monthName,
+        'Belum ada log',
+        'Belum ada log',
+        'Belum ada log',
+        'Belum ada log',
+        'Belum ada log',
+        'Belum ada log',
+        'Belum ada log',
+        '0%',
+        'Belum terisi'
+      ]);
+    }
+
+    autoTable(doc, {
+      startY: infoY + 21,
+      head: [[
+        'No',
+        'Tgl (Hari)',
+        '1. Bangun Pagi',
+        '2. Beribadah',
+        '3. Berolahraga',
+        '4. Makan Sehat',
+        '5. Gemar Membaca',
+        '6. Bermasyarakat',
+        '7. Tidur Cepat',
+        'Skor KAIH',
+        'Validasi Ortu'
+      ]],
+      body: tableBody,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [26, 68, 148], // Dark Blue
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 7,
+        halign: 'center',
+        cellPadding: 1.5
+      },
+      styles: {
+        fontSize: 6.5,
+        cellPadding: { top: 1.5, bottom: 1.5, left: 1.5, right: 1.5 },
+        textColor: [30, 41, 59],
+        lineColor: [203, 213, 225],
+        lineWidth: 0.15,
+        overflow: 'linebreak'
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 7 },
+        1: { halign: 'center', fontStyle: 'bold', cellWidth: 17 },
+        2: { cellWidth: 24 },
+        3: { cellWidth: 28 },
+        4: { cellWidth: 28 },
+        5: { cellWidth: 26 },
+        6: { cellWidth: 32 },
+        7: { cellWidth: 32 },
+        8: { cellWidth: 22 },
+        9: { halign: 'center', fontStyle: 'bold', cellWidth: 22 },
+        10: { halign: 'center', fontStyle: 'bold', cellWidth: 22 }
+      },
+      margin: { left: margin, right: margin }
+    });
+
+    let currentY = (doc as any).lastAutoTable.finalY + 5;
+
+    // Check if we need a new page for notes & signatures
+    if (currentY + 45 > doc.internal.pageSize.getHeight()) {
+      doc.addPage();
+      currentY = 18;
+    }
+
+    // Catatan Tambahan Guru / Rekomendasi
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Catatan Evaluasi & Rekomendasi Pembiasaan:', margin, currentY);
+
+    currentY += 2;
+    doc.setDrawColor(203, 213, 225);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(margin, currentY, pageWidth - 2 * margin, 14, 1.5, 1.5, 'FD');
+
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    const noteText = customTeacherNote || 
+      `Ananda ${student.name} telah melaksanakan jurnal 7 KAIH selama ${totalDays} hari pada periode ${monthName} dengan rerata ${avgScore}%. Orang tua dan wali kelas diharapkan terus bersinergi dalam membimbing konsistensi pembiasaan beribadah, literasi membaca, dan istirahat tepat waktu.`;
+    doc.text(doc.splitTextToSize(noteText, pageWidth - 2 * margin - 6), margin + 3, currentY + 4.5);
+
+    currentY += 18;
+
+    // Signatures 4 Kolom: Siswa, Orang Tua, Wali Kelas, Kepala Sekolah
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${config.regency}, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, pageWidth - margin - 50, currentY);
+
+    currentY += 4;
+    const colW = (pageWidth - 2 * margin) / 4;
+
+    // 1. Siswa
+    doc.text('Siswa / Murid,', margin + (colW / 2), currentY, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(student.name, margin + (colW / 2), currentY + 14, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text(`NIS. ${student.nis || student.nisn || '-'}`, margin + (colW / 2), currentY + 17.5, { align: 'center' });
+
+    // 2. Orang Tua
+    doc.text('Orang Tua / Wali Murid,', margin + colW + (colW / 2), currentY, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text('( ................................... )', margin + colW + (colW / 2), currentY + 14, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text('Tanda Tangan & Nama Terang', margin + colW + (colW / 2), currentY + 17.5, { align: 'center' });
+
+    // 3. Wali Kelas
+    doc.text('Wali Kelas,', margin + 2 * colW + (colW / 2), currentY, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(displayTeacherName, margin + 2 * colW + (colW / 2), currentY + 14, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text(displayTeacherNip, margin + 2 * colW + (colW / 2), currentY + 17.5, { align: 'center' });
+
+    // 4. Kepala Sekolah
+    doc.text(`Mengetahui Kepala Sekolah,`, margin + 3 * colW + (colW / 2), currentY, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(config.principalName, margin + 3 * colW + (colW / 2), currentY + 14, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text(`NIP. ${config.principalNip}`, margin + 3 * colW + (colW / 2), currentY + 17.5, { align: 'center' });
+
+    const filename = `Detail_Pelaksanaan_7KAIH_${student.name.replace(/\s+/g, '_')}_${monthName.replace(/\s+/g, '_')}.pdf`;
+    doc.save(filename);
+  }
+
+  /**
    * Export comprehensive classroom monthly report for Wali Kelas & School Archive with formal Kop Surat
    */
   static generateClassReport(
