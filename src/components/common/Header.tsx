@@ -41,14 +41,6 @@ export const Header: React.FC<HeaderProps> = ({ onSelectDate }) => {
   const { unreadNotificationCount } = useJournal();
   const { schoolSettings } = useSchoolSettings();
   const { navigate } = useNavigation();
-
-  const handleLogoClick = () => {
-    if (!currentUser) return;
-    if (currentUser.role === 'siswa') navigate('/siswa/jurnal');
-    else if (currentUser.role === 'orangtua') navigate('/orangtua/validasi');
-    else if (currentUser.role === 'walikelas') navigate('/guru');
-    else if (currentUser.role === 'admin') navigate('/admin/ringkasan');
-  };
   
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
@@ -72,6 +64,20 @@ export const Header: React.FC<HeaderProps> = ({ onSelectDate }) => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showUserMenu]);
+
+  const handleBrandClick = () => {
+    if (!currentUser) {
+      navigate('/login');
+    } else if (currentUser.role === 'admin') {
+      navigate('/admin');
+    } else if (currentUser.role === 'siswa') {
+      navigate('/siswa');
+    } else if (currentUser.role === 'orangtua') {
+      navigate('/orangtua');
+    } else if (currentUser.role === 'walikelas') {
+      navigate('/walikelas');
+    }
+  };
 
   const getRoleLabel = (role: UserRole) => {
     switch (role) {
@@ -109,8 +115,8 @@ export const Header: React.FC<HeaderProps> = ({ onSelectDate }) => {
         <div className="flex items-center justify-between h-14 gap-2.5">
           {/* Brand Logo & Title */}
           <div 
-            onClick={handleLogoClick}
-            className="flex items-center gap-2.5 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={handleBrandClick}
+            className="flex items-center gap-2.5 min-w-0 cursor-pointer select-none hover:opacity-90 transition-opacity"
             title="Kembali ke Beranda"
           >
             <SchoolLogo className="w-8 h-8 shrink-0 drop-shadow-xs" />
@@ -288,6 +294,7 @@ export const Header: React.FC<HeaderProps> = ({ onSelectDate }) => {
                       onClick={() => {
                         setShowUserMenu(false);
                         logout();
+                        navigate('/login', { replace: true });
                       }}
                       className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
                     >

@@ -27,6 +27,7 @@ interface AuthContextType {
   updateUser: (userId: string, updates: Partial<User>) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
   deleteUsersBulk: (userIds: string[]) => Promise<void>;
+  purgeDeletedUsersAndOrphansFromCloud: () => Promise<{ deletedUsersCount: number; deletedJournalsCount: number }>;
   syncAllUsersToCloud: (usersToSync?: User[]) => Promise<{ count: number; success: boolean }>;
   importStudentsBulk: (importedList: { 
     name: string; 
@@ -694,6 +695,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     markUsersAsDeleted(userId);
     const userToDelete = allUsers.find(u => u.id === userId);
     
+    let updatedParentsToSync: User[] = [];
+    let updatedStudentsToSync: User[] = [];
+
     setAllUsers(prev => {
       let updated = prev.filter(u => u.id !== userId);
 
@@ -702,7 +706,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updated = updated.map(u => {
           if (u.role === 'orangtua' && u.studentIds?.includes(userId)) {
             const newStudentIds = u.studentIds.filter(id => id !== userId);
-            return { ...u, studentIds: newStudentIds };
+            const modParent = { ...u, studentIds: newStudentIds };
+            updatedParentsToSync.push(modParent);
+            return modParent;
           }
           return u;
         });
@@ -713,7 +719,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updated = updated.map(u => {
           if (u.role === 'siswa' && u.parentId === userId) {
             const { parentId, ...rest } = u;
-            return rest as User;
+            const modStudent = rest as User;
+            updatedStudentsToSync.push(modStudent);
+            return modStudent;
           }
           return u;
         });
@@ -731,22 +739,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (db) {
       try {
+        // 1. Permanently delete user document from Firestore
         await deleteDoc(doc(db, 'users', userId));
         
-        // Also cascade delete all journals belonging to this student
+        // 2. Update modified parent relations in Firestore
+        if (updatedParentsToSync.length > 0) {
+          for (const parent of updatedParentsToSync) {
+            await setDoc(doc(db, 'users', parent.id), cleanForFirestore(parent), { merge: true });
+          }
+        }
+
+        // 3. Update modified student relations in Firestore
+        if (updatedStudentsToSync.length > 0) {
+          for (const student of updatedStudentsToSync) {
+            await setDoc(doc(db, 'users', student.id), cleanForFirestore(student), { merge: true });
+          }
+        }
+
+        // 4. Cascade delete all journals belonging to this student
         if (userToDelete?.role === 'siswa') {
           const journalsSnapshot = await getDocs(collection(db, 'journals'));
-          const batch = writeBatch(db);
-          let count = 0;
+          const batchList: Promise<void>[] = [];
+          let currentBatch = writeBatch(db);
+          let opCount = 0;
+
           journalsSnapshot.forEach(docSnap => {
             const data = docSnap.data();
             if (data.studentId === userId) {
-              batch.delete(doc(db, 'journals', docSnap.id));
-              count++;
+              currentBatch.delete(doc(db, 'journals', docSnap.id));
+              opCount++;
+              if (opCount >= 400) {
+                batchList.push(currentBatch.commit());
+                currentBatch = writeBatch(db);
+                opCount = 0;
+              }
             }
           });
-          if (count > 0) {
-            await batch.commit();
+
+          if (opCount > 0) {
+            batchList.push(currentBatch.commit());
+          }
+          if (batchList.length > 0) {
+            await Promise.all(batchList);
           }
         }
       } catch (e) {
@@ -763,6 +797,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const studentIdsToDelete = new Set(usersToDelete.filter(u => u.role === 'siswa').map(u => u.id));
     const parentIdsToDelete = new Set(usersToDelete.filter(u => u.role === 'orangtua').map(u => u.id));
 
+    let updatedParentsToSync: User[] = [];
+    let updatedStudentsToSync: User[] = [];
+
     setAllUsers(prev => {
       let updated = prev.filter(u => !userSet.has(u.id));
 
@@ -770,7 +807,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updated = updated.map(u => {
           if (u.role === 'orangtua' && u.studentIds) {
             const newStudentIds = u.studentIds.filter(id => !studentIdsToDelete.has(id));
-            return { ...u, studentIds: newStudentIds };
+            const modParent = { ...u, studentIds: newStudentIds };
+            updatedParentsToSync.push(modParent);
+            return modParent;
           }
           return u;
         });
@@ -780,7 +819,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updated = updated.map(u => {
           if (u.role === 'siswa' && u.parentId && parentIdsToDelete.has(u.parentId)) {
             const { parentId, ...rest } = u;
-            return rest as User;
+            const modStudent = rest as User;
+            updatedStudentsToSync.push(modStudent);
+            return modStudent;
           }
           return u;
         });
@@ -798,27 +839,127 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (db) {
       try {
-        const batch = writeBatch(db);
+        const batchList: Promise<void>[] = [];
+        let currentBatch = writeBatch(db);
+        let opCount = 0;
+
+        // 1. Batch delete users
         userIds.forEach(uid => {
-          batch.delete(doc(db, 'users', uid));
+          currentBatch.delete(doc(db, 'users', uid));
+          opCount++;
+          if (opCount >= 400) {
+            batchList.push(currentBatch.commit());
+            currentBatch = writeBatch(db);
+            opCount = 0;
+          }
         });
-        
-        // Also cascade delete journals for all deleted students
+
+        // 2. Cascade delete journals for all deleted students
         if (studentIdsToDelete.size > 0) {
           const journalsSnapshot = await getDocs(collection(db, 'journals'));
           journalsSnapshot.forEach(docSnap => {
             const data = docSnap.data();
             if (studentIdsToDelete.has(data.studentId)) {
-              batch.delete(doc(db, 'journals', docSnap.id));
+              currentBatch.delete(doc(db, 'journals', docSnap.id));
+              opCount++;
+              if (opCount >= 400) {
+                batchList.push(currentBatch.commit());
+                currentBatch = writeBatch(db);
+                opCount = 0;
+              }
             }
           });
         }
 
-        await batch.commit();
+        if (opCount > 0) {
+          batchList.push(currentBatch.commit());
+        }
+        if (batchList.length > 0) {
+          await Promise.all(batchList);
+        }
+
+        // 3. Update modified parent / student documents
+        if (updatedParentsToSync.length > 0) {
+          for (const parent of updatedParentsToSync) {
+            await setDoc(doc(db, 'users', parent.id), cleanForFirestore(parent), { merge: true });
+          }
+        }
+        if (updatedStudentsToSync.length > 0) {
+          for (const student of updatedStudentsToSync) {
+            await setDoc(doc(db, 'users', student.id), cleanForFirestore(student), { merge: true });
+          }
+        }
       } catch (e) {
         console.warn('Firestore bulk delete user and cascade fallback:', e);
       }
     }
+  };
+
+  const purgeDeletedUsersAndOrphansFromCloud = async (): Promise<{ deletedUsersCount: number; deletedJournalsCount: number }> => {
+    let deletedUsersCount = 0;
+    let deletedJournalsCount = 0;
+    const deletedUserIds = getDeletedUserIds();
+
+    if (db) {
+      try {
+        // 1. Scan and purge deleted users from Firestore
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const userBatchList: Promise<void>[] = [];
+        let uBatch = writeBatch(db);
+        let uOps = 0;
+
+        usersSnapshot.forEach(docSnap => {
+          if (deletedUserIds.has(docSnap.id)) {
+            uBatch.delete(doc(db, 'users', docSnap.id));
+            deletedUsersCount++;
+            uOps++;
+            if (uOps >= 400) {
+              userBatchList.push(uBatch.commit());
+              uBatch = writeBatch(db);
+              uOps = 0;
+            }
+          }
+        });
+
+        if (uOps > 0) {
+          userBatchList.push(uBatch.commit());
+        }
+        if (userBatchList.length > 0) {
+          await Promise.all(userBatchList);
+        }
+
+        // 2. Scan and purge journals belonging to deleted users or orphaned entries
+        const journalsSnapshot = await getDocs(collection(db, 'journals'));
+        const jBatchList: Promise<void>[] = [];
+        let jBatch = writeBatch(db);
+        let jOps = 0;
+
+        journalsSnapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          if (deletedUserIds.has(data.studentId)) {
+            jBatch.delete(doc(db, 'journals', docSnap.id));
+            deletedJournalsCount++;
+            jOps++;
+            if (jOps >= 400) {
+              jBatchList.push(jBatch.commit());
+              jBatch = writeBatch(db);
+              jOps = 0;
+            }
+          }
+        });
+
+        if (jOps > 0) {
+          jBatchList.push(jBatch.commit());
+        }
+        if (jBatchList.length > 0) {
+          await Promise.all(jBatchList);
+        }
+      } catch (e) {
+        console.warn('Error purging deleted users & journals from cloud:', e);
+      }
+    }
+
+    return { deletedUsersCount, deletedJournalsCount };
   };
 
   const generateNewCredentials = async (userId: string): Promise<string> => {
@@ -986,6 +1127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateUser,
         deleteUser,
         deleteUsersBulk,
+        purgeDeletedUsersAndOrphansFromCloud,
         syncAllUsersToCloud,
         importStudentsBulk,
         generateNewCredentials,

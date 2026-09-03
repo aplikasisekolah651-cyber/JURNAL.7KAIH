@@ -14,6 +14,7 @@ import { audioNotifier } from '../lib/audioNotifier';
 import { E2EEService } from '../lib/crypto';
 import { db, cleanForFirestore } from '../lib/firebase';
 import { collection, setDoc, doc, onSnapshot, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
+import { getDeletedUserIds } from './AuthContext';
 
 interface JournalContextType {
   journals: JournalEntry[];
@@ -50,6 +51,8 @@ interface JournalContextType {
   getStudentJournals: (studentId: string) => JournalEntry[];
   deleteJournal: (journalId: string) => Promise<void>;
   deleteJournalsBulk: (journalIds: string[]) => Promise<void>;
+  deleteJournalsByStudentIds: (studentIds: string[]) => Promise<void>;
+  purgeOrphanedJournals: (validStudentIds?: string[]) => Promise<{ deletedCount: number }>;
   clearAllJournals: () => Promise<void>;
   
   // Stats & Analytics
@@ -115,12 +118,13 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const [journals, setJournals] = useState<JournalEntry[]>(() => {
     const deletedIds = getDeletedJournalIds();
+    const deletedUserIds = getDeletedUserIds();
     const saved = localStorage.getItem(JOURNALS_STORAGE_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.filter(j => !deletedIds.has(j.id));
+          return parsed.filter(j => !deletedIds.has(j.id) && !deletedUserIds.has(j.studentId));
         }
       } catch (e) {
         console.error('Failed to parse cached journals:', e);
@@ -190,11 +194,13 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     getDocs(journalsColRef).then((snapshot) => {
       if (!isMounted) return;
       const deletedIds = getDeletedJournalIds();
+      const deletedUserIds = getDeletedUserIds();
       if (!snapshot.empty) {
         const firestoreJournals: JournalEntry[] = [];
         snapshot.forEach((docSnap) => {
-          if (!deletedIds.has(docSnap.id)) {
-            firestoreJournals.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          const data = docSnap.data() as any;
+          if (!deletedIds.has(docSnap.id) && !deletedUserIds.has(data.studentId)) {
+            firestoreJournals.push({ id: docSnap.id, ...data });
           }
         });
         setJournals(firestoreJournals.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
@@ -210,10 +216,12 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const unsub = onSnapshot(journalsColRef, (snapshot) => {
         if (!isMounted) return;
         const deletedIds = getDeletedJournalIds();
+        const deletedUserIds = getDeletedUserIds();
         const firestoreJournals: JournalEntry[] = [];
         snapshot.forEach((docSnap) => {
-          if (!deletedIds.has(docSnap.id)) {
-            firestoreJournals.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          const data = docSnap.data() as any;
+          if (!deletedIds.has(docSnap.id) && !deletedUserIds.has(data.studentId)) {
+            firestoreJournals.push({ id: docSnap.id, ...data });
           }
         });
         setJournals(firestoreJournals.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
@@ -615,6 +623,126 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const deleteJournalsByStudentIds = async (studentIds: string[]): Promise<void> => {
+    if (!studentIds || studentIds.length === 0) return;
+    const studentSet = new Set(studentIds);
+    
+    // Find all journal entries belonging to these students
+    const journalsToDelete = journals.filter(j => studentSet.has(j.studentId));
+    const journalIdsToDelete = journalsToDelete.map(j => j.id);
+    
+    if (journalIdsToDelete.length > 0) {
+      markJournalsAsDeleted(journalIdsToDelete);
+    }
+    
+    // Remove from local state
+    setJournals(prev => {
+      const updated = prev.filter(j => !studentSet.has(j.studentId));
+      localStorage.setItem(JOURNALS_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
+    // Also clean notifications related to these students
+    setNotifications(prev => {
+      const updated = prev.filter(n => !(n.studentId && studentSet.has(n.studentId)) && !(n.userId && studentSet.has(n.userId)));
+      localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
+    // Permanently delete matching journals from Firestore
+    if (db) {
+      try {
+        const journalsSnapshot = await getDocs(collection(db, 'journals'));
+        const batchList: Promise<void>[] = [];
+        let currentBatch = writeBatch(db);
+        let opCount = 0;
+
+        journalsSnapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          if (studentSet.has(data.studentId) || journalIdsToDelete.includes(docSnap.id)) {
+            currentBatch.delete(doc(db, 'journals', docSnap.id));
+            opCount++;
+            if (opCount >= 400) {
+              batchList.push(currentBatch.commit());
+              currentBatch = writeBatch(db);
+              opCount = 0;
+            }
+          }
+        });
+
+        if (opCount > 0) {
+          batchList.push(currentBatch.commit());
+        }
+        if (batchList.length > 0) {
+          await Promise.all(batchList);
+        }
+      } catch (e) {
+        console.warn('Firestore deleteJournalsByStudentIds sync error:', e);
+      }
+    }
+  };
+
+  const purgeOrphanedJournals = async (validStudentIds?: string[]): Promise<{ deletedCount: number }> => {
+    let count = 0;
+    const deletedIds = getDeletedJournalIds();
+    const deletedUserIds = getDeletedUserIds();
+    const validSet = validStudentIds ? new Set(validStudentIds) : null;
+
+    // 1. Filter local journals
+    setJournals(prev => {
+      const updated = prev.filter(j => {
+        const isDeletedId = deletedIds.has(j.id);
+        const isDeletedStudent = deletedUserIds.has(j.studentId);
+        const isInvalidStudent = validSet ? !validSet.has(j.studentId) : false;
+        if (isDeletedId || isDeletedStudent || isInvalidStudent) {
+          count++;
+          return false;
+        }
+        return true;
+      });
+      localStorage.setItem(JOURNALS_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
+    // 2. Query Firestore and delete all orphaned/deleted journals
+    if (db) {
+      try {
+        const snapshot = await getDocs(collection(db, 'journals'));
+        const batchList: Promise<void>[] = [];
+        let currentBatch = writeBatch(db);
+        let opCount = 0;
+
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          const isDeletedId = deletedIds.has(docSnap.id);
+          const isDeletedStudent = deletedUserIds.has(data.studentId);
+          const isInvalidStudent = validSet ? !validSet.has(data.studentId) : false;
+
+          if (isDeletedId || isDeletedStudent || isInvalidStudent) {
+            currentBatch.delete(doc(db, 'journals', docSnap.id));
+            opCount++;
+            if (opCount >= 400) {
+              batchList.push(currentBatch.commit());
+              currentBatch = writeBatch(db);
+              opCount = 0;
+            }
+          }
+        });
+
+        if (opCount > 0) {
+          batchList.push(currentBatch.commit());
+        }
+        if (batchList.length > 0) {
+          await Promise.all(batchList);
+        }
+      } catch (e) {
+        console.warn('Firestore purgeOrphanedJournals error:', e);
+      }
+    }
+
+    return { deletedCount: count };
+  };
+
   const clearAllJournals = async (): Promise<void> => {
     const currentJournals = [...journals];
     if (currentJournals.length > 0) {
@@ -859,6 +987,8 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
         getStudentJournals,
         deleteJournal,
         deleteJournalsBulk,
+        deleteJournalsByStudentIds,
+        purgeOrphanedJournals,
         clearAllJournals,
         getClassAnalysis,
         getStudentStats,

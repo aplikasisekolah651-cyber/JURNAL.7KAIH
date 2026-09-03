@@ -3,7 +3,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { SchoolProvider, useSchoolSettings } from './context/SchoolContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { JournalProvider, useJournal } from './context/JournalContext';
-import { NavigationProvider, useNavigation } from './context/NavigationContext';
+import { NavigationProvider, useNavigation, ADMIN_TAB_TO_PATH } from './context/NavigationContext';
 import { Header } from './components/common/Header';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { StudentDashboard } from './components/student/StudentDashboard';
@@ -18,32 +18,78 @@ const MainLayout: React.FC = () => {
   const { currentUser, isAuthenticated } = useAuth();
   const { activeReminderHabit, dismissReminder } = useJournal();
   const { schoolSettings } = useSchoolSettings();
-  const { currentPath, navigate } = useNavigation();
+  const { routeInfo, navigate, intendedPath, clearIntendedPath } = useNavigation();
   const [selectedStudentDate, setSelectedStudentDate] = useState<string | undefined>(undefined);
 
-  // Sync initial URL on auth state changes
+  // Sync URL with User's Role & intended path upon authentication
   useEffect(() => {
-    if (!isAuthenticated || !currentUser) {
-      if (!currentPath.startsWith('/login') && currentPath !== '/') {
-        navigate('/login', { replace: true });
+    if (!isAuthenticated || !currentUser) return;
+
+    // If user arrived with an intended path that matches their role:
+    if (intendedPath) {
+      const lower = intendedPath.toLowerCase();
+      const isAdminPath = lower === '/admin' || lower.startsWith('/admin/');
+      const isSiswaPath = lower === '/siswa' || lower.startsWith('/siswa/');
+      const isParentPath = lower === '/orangtua' || lower.startsWith('/orangtua/');
+      const isTeacherPath = lower === '/walikelas' || lower.startsWith('/walikelas/') || lower === '/guru' || lower.startsWith('/guru/');
+
+      if (
+        (currentUser.role === 'admin' && isAdminPath) ||
+        (currentUser.role === 'siswa' && isSiswaPath) ||
+        (currentUser.role === 'orangtua' && isParentPath) ||
+        (currentUser.role === 'walikelas' && isTeacherPath)
+      ) {
+        navigate(intendedPath, { replace: true });
+        clearIntendedPath();
+        return;
       }
-      document.title = `Login - Jurnal 7 KAIH ${schoolSettings.name}`;
-      return;
     }
 
-    // Role-based root or login redirect
-    if (currentPath === '/' || currentPath === '/login' || currentPath === '') {
-      if (currentUser.role === 'siswa') {
-        navigate('/siswa/jurnal', { replace: true });
+    // Default route assignment if on root or login or unmatched path
+    const currentLower = window.location.pathname.toLowerCase();
+    if (currentLower === '/' || currentLower === '/login' || currentLower === '') {
+      if (currentUser.role === 'siswa') navigate('/siswa', { replace: true });
+      else if (currentUser.role === 'orangtua') navigate('/orangtua', { replace: true });
+      else if (currentUser.role === 'walikelas') navigate('/walikelas', { replace: true });
+      else if (currentUser.role === 'admin') navigate('/admin', { replace: true });
+    }
+  }, [isAuthenticated, currentUser, intendedPath, navigate, clearIntendedPath]);
+
+  // Document Title synchronization
+  useEffect(() => {
+    let title = `${schoolSettings.name || 'Jurnal 7 KAIH'} - Kebiasaan Anak Indonesia Hebat`;
+    if (!isAuthenticated) {
+      if (routeInfo.roleRoute === 'admin') {
+        title = `Login Admin • ${schoolSettings.name}`;
+      } else {
+        title = `Login • ${schoolSettings.name}`;
+      }
+    } else if (currentUser) {
+      if (currentUser.role === 'admin') {
+        const tabNames: Record<string, string> = {
+          overview: 'Ringkasan Sistem',
+          students: 'Data Siswa',
+          parents: 'Data Orang Tua',
+          teachers: 'Data Guru & Wali Kelas',
+          journals: 'Monitoring Jurnal',
+          reports: 'Rekap & Laporan',
+          import: 'Import Data Siswa',
+          credentials: 'Kartu Akun & Sandi',
+          settings: 'Pengaturan Sekolah',
+          database: 'Database & Keamanan',
+        };
+        const currentTab = routeInfo.adminTab || 'overview';
+        title = `${tabNames[currentTab] || 'Admin'} • ${schoolSettings.name}`;
+      } else if (currentUser.role === 'siswa') {
+        title = `Jurnal Siswa • ${currentUser.name}`;
       } else if (currentUser.role === 'orangtua') {
-        navigate('/orangtua/validasi', { replace: true });
+        title = `Portal Orang Tua • ${schoolSettings.name}`;
       } else if (currentUser.role === 'walikelas') {
-        navigate('/guru', { replace: true });
-      } else if (currentUser.role === 'admin') {
-        navigate('/admin/ringkasan', { replace: true });
+        title = `Dashboard Wali Kelas • ${schoolSettings.name}`;
       }
     }
-  }, [isAuthenticated, currentUser?.role, currentPath, navigate, schoolSettings.name]);
+    document.title = title;
+  }, [routeInfo, isAuthenticated, currentUser, schoolSettings]);
 
   if (!isAuthenticated || !currentUser) {
     return <LoginScreen />;
@@ -143,3 +189,4 @@ export default function App() {
     </ThemeProvider>
   );
 }
+

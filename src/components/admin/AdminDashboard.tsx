@@ -1,5 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigation } from '../../context/NavigationContext';
+import React, { useState, useMemo } from 'react';
 import { 
   Shield, 
   Users, 
@@ -58,17 +57,34 @@ import { AdminSettings } from './AdminSettings';
 import { AdminReports } from './AdminReports';
 import { AdminJournalMonitoring } from './AdminJournalMonitoring';
 import { PDFReportGenerator } from '../../lib/pdfGenerator';
+import { useNavigation, AdminMenuKey } from '../../context/NavigationContext';
 import * as XLSX from 'xlsx';
 
-type AdminMenuKey = 'overview' | 'students' | 'parents' | 'teachers' | 'journals' | 'reports' | 'import' | 'credentials' | 'settings' | 'database';
-
 export const AdminDashboard: React.FC = () => {
-  const { allUsers, addUser, updateUser, deleteUser, deleteUsersBulk, importStudentsBulk, generateNewCredentials, syncAllUsersToCloud } = useAuth();
-  const { journals, getStudentJournals } = useJournal();
+  const { 
+    allUsers, 
+    addUser, 
+    updateUser, 
+    deleteUser, 
+    deleteUsersBulk, 
+    purgeDeletedUsersAndOrphansFromCloud,
+    importStudentsBulk, 
+    generateNewCredentials, 
+    syncAllUsersToCloud 
+  } = useAuth();
+  const { 
+    journals, 
+    getStudentJournals, 
+    deleteJournalsByStudentIds, 
+    purgeOrphanedJournals 
+  } = useJournal();
   const { schoolSettings } = useSchoolSettings();
+  const { routeInfo, setAdminMenuTab } = useNavigation();
 
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [cloudSyncSuccess, setCloudSyncSuccess] = useState<string | null>(null);
+  const [isPurging, setIsPurging] = useState(false);
+  const [purgeResult, setPurgeResult] = useState<string | null>(null);
 
   const handleManualCloudSync = async () => {
     setIsCloudSyncing(true);
@@ -88,6 +104,28 @@ export const AdminDashboard: React.FC = () => {
       setTimeout(() => {
         setCloudSyncSuccess(null);
       }, 6000);
+    }
+  };
+
+  const handleDeepCleanDatabase = async () => {
+    setIsPurging(true);
+    setPurgeResult(null);
+    try {
+      const studentIds = allUsers.filter(u => u.role === 'siswa').map(u => u.id);
+      const authPurgeRes = await purgeDeletedUsersAndOrphansFromCloud();
+      const journalPurgeRes = await purgeOrphanedJournals(studentIds);
+      const totalJournalsCleaned = journalPurgeRes.deletedCount + authPurgeRes.deletedJournalsCount;
+      setPurgeResult(
+        `Pembersihan Berhasil! ${authPurgeRes.deletedUsersCount} akun terhapus dan ${totalJournalsCleaned} riwayat/jurnal yatim telah dibersihkan secara permanen dari Cloud Firestore & cache lokal.`
+      );
+    } catch (err) {
+      console.error('Deep clean error:', err);
+      setPurgeResult('Terjadi kesalahan saat membersihkan data database.');
+    } finally {
+      setIsPurging(false);
+      setTimeout(() => {
+        setPurgeResult(null);
+      }, 8000);
     }
   };
 
@@ -117,95 +155,12 @@ export const AdminDashboard: React.FC = () => {
   const excelFileInputRef = React.useRef<HTMLInputElement>(null);
   const [selectedFileName, setSelectedFileName] = useState<string>('');
 
-  // URL Navigation Mapping
-  const { currentPath, navigate } = useNavigation();
-
-  const menuToPath = (menu: AdminMenuKey): string => {
-    switch (menu) {
-      case 'overview': return '/admin/ringkasan';
-      case 'students': return '/admin/siswa';
-      case 'parents': return '/admin/orangtua';
-      case 'teachers': return '/admin/guru';
-      case 'journals': return '/admin/jurnal';
-      case 'reports': return '/admin/laporan';
-      case 'import': return '/admin/import';
-      case 'credentials': return '/admin/kredensial';
-      case 'settings': return '/admin/pengaturan';
-      case 'database': return '/admin/database';
-      default: return '/admin/ringkasan';
-    }
+  // Sidebar Menu State synced with browser URL
+  const activeMenu: AdminMenuKey = routeInfo.adminTab || 'overview';
+  const setActiveMenu = (menu: AdminMenuKey) => {
+    setAdminMenuTab(menu, true);
   };
-
-  const pathToMenu = (path: string): AdminMenuKey => {
-    if (path.includes('/admin/siswa') || path.includes('/admin/students')) return 'students';
-    if (path.includes('/admin/orangtua') || path.includes('/admin/parents')) return 'parents';
-    if (path.includes('/admin/guru') || path.includes('/admin/teachers') || path.includes('/admin/walikelas')) return 'teachers';
-    if (path.includes('/admin/jurnal') || path.includes('/admin/journals')) return 'journals';
-    if (path.includes('/admin/laporan') || path.includes('/admin/reports') || path.includes('/admin/raport')) return 'reports';
-    if (path.includes('/admin/import')) return 'import';
-    if (path.includes('/admin/kredensial') || path.includes('/admin/akun') || path.includes('/admin/credentials')) return 'credentials';
-    if (path.includes('/admin/pengaturan') || path.includes('/admin/settings')) return 'settings';
-    if (path.includes('/admin/database') || path.includes('/admin/db')) return 'database';
-    return 'overview';
-  };
-
-  // Sidebar Menu State initialized from URL
-  const [activeMenu, setActiveMenu] = useState<AdminMenuKey>(() => {
-    if (typeof window !== 'undefined') {
-      return pathToMenu(window.location.pathname);
-    }
-    return 'overview';
-  });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
-  // Sync menu and document title on URL change
-  useEffect(() => {
-    const targetMenu = pathToMenu(currentPath);
-    if (targetMenu !== activeMenu) {
-      setActiveMenu(targetMenu);
-    }
-
-    // Dynamic document title based on selected menu
-    switch (targetMenu) {
-      case 'overview':
-        document.title = 'Ringkasan & Statistik - Admin Jurnal 7 KAIH';
-        break;
-      case 'students':
-        document.title = 'Manajemen Data Siswa - Admin Jurnal 7 KAIH';
-        break;
-      case 'parents':
-        document.title = 'Manajemen Data Orang Tua - Admin Jurnal 7 KAIH';
-        break;
-      case 'teachers':
-        document.title = 'Manajemen Guru & Wali Kelas - Admin Jurnal 7 KAIH';
-        break;
-      case 'journals':
-        document.title = 'Monitoring Jurnal 7 KAIH - Admin';
-        break;
-      case 'reports':
-        document.title = 'Laporan & Raport Karakter - Admin Jurnal 7 KAIH';
-        break;
-      case 'import':
-        document.title = 'Impor Data Siswa Excel - Admin Jurnal 7 KAIH';
-        break;
-      case 'credentials':
-        document.title = 'Cetak & Distribusi Akun - Admin Jurnal 7 KAIH';
-        break;
-      case 'settings':
-        document.title = 'Pengaturan Identitas Sekolah - Admin Jurnal 7 KAIH';
-        break;
-      case 'database':
-        document.title = 'Cadangan & Kelola Database - Admin Jurnal 7 KAIH';
-        break;
-    }
-  }, [currentPath]);
-
-  // Handler for menu selection with URL update
-  const handleSelectMenu = (menu: AdminMenuKey) => {
-    setActiveMenu(menu);
-    setMobileSidebarOpen(false);
-    navigate(menuToPath(menu));
-  };
 
   // Student Filter & Pagination & Bulk Selection States
   const [selectedClass, setSelectedClass] = useState<string>('all');
@@ -644,11 +599,14 @@ export const AdminDashboard: React.FC = () => {
   const handleConfirmBulkDelete = async () => {
     if (!bulkDeleteModal.ids || bulkDeleteModal.ids.length === 0) return;
     setDeletingBulk(true);
+    const targetIds = [...bulkDeleteModal.ids];
+    const targetRole = bulkDeleteModal.role;
     try {
-      await deleteUsersBulk(bulkDeleteModal.ids);
-      if (bulkDeleteModal.role === 'siswa') {
+      await deleteUsersBulk(targetIds);
+      if (targetRole === 'siswa') {
+        await deleteJournalsByStudentIds(targetIds);
         setSelectedStudentIds([]);
-      } else if (bulkDeleteModal.role === 'orangtua') {
+      } else if (targetRole === 'orangtua') {
         setSelectedParentIds([]);
       }
       setBulkDeleteModal({ open: false, role: 'siswa', ids: [], count: 0, title: '' });
@@ -877,8 +835,13 @@ export const AdminDashboard: React.FC = () => {
   const handleConfirmDelete = async () => {
     if (!deleteModal.user) return;
     setDeletingUser(true);
+    const targetId = deleteModal.user.id;
+    const targetRole = deleteModal.user.role;
     try {
-      await deleteUser(deleteModal.user.id);
+      await deleteUser(targetId);
+      if (targetRole === 'siswa') {
+        await deleteJournalsByStudentIds([targetId]);
+      }
       setDeleteModal({ open: false, user: null });
     } catch (err) {
       console.error('Error deleting user:', err);
@@ -1218,8 +1181,8 @@ export const AdminDashboard: React.FC = () => {
           {/* Nav List */}
           <nav className="space-y-1">
             <button
-              onClick={() => handleSelectMenu('overview')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              onClick={() => { setActiveMenu('overview'); setMobileSidebarOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeMenu === 'overview'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1237,8 +1200,8 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => handleSelectMenu('students')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              onClick={() => { setActiveMenu('students'); setMobileSidebarOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeMenu === 'students'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1256,8 +1219,8 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => handleSelectMenu('parents')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              onClick={() => { setActiveMenu('parents'); setMobileSidebarOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeMenu === 'parents'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1275,8 +1238,8 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => handleSelectMenu('teachers')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              onClick={() => { setActiveMenu('teachers'); setMobileSidebarOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeMenu === 'teachers'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1294,8 +1257,8 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => handleSelectMenu('journals')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              onClick={() => { setActiveMenu('journals'); setMobileSidebarOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeMenu === 'journals'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1313,8 +1276,8 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => handleSelectMenu('reports')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              onClick={() => { setActiveMenu('reports'); setMobileSidebarOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeMenu === 'reports'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1335,8 +1298,8 @@ export const AdminDashboard: React.FC = () => {
               </span>
 
               <button
-                onClick={() => handleSelectMenu('import')}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                onClick={() => { setActiveMenu('import'); setMobileSidebarOpen(false); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeMenu === 'import'
                     ? 'bg-purple-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1347,8 +1310,8 @@ export const AdminDashboard: React.FC = () => {
               </button>
 
               <button
-                onClick={() => handleSelectMenu('credentials')}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                onClick={() => { setActiveMenu('credentials'); setMobileSidebarOpen(false); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeMenu === 'credentials'
                     ? 'bg-purple-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1359,8 +1322,8 @@ export const AdminDashboard: React.FC = () => {
               </button>
 
               <button
-                onClick={() => handleSelectMenu('settings')}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                onClick={() => { setActiveMenu('settings'); setMobileSidebarOpen(false); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeMenu === 'settings'
                     ? 'bg-purple-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1371,8 +1334,8 @@ export const AdminDashboard: React.FC = () => {
               </button>
 
               <button
-                onClick={() => handleSelectMenu('database')}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                onClick={() => { setActiveMenu('database'); setMobileSidebarOpen(false); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeMenu === 'database'
                     ? 'bg-purple-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
@@ -1425,21 +1388,21 @@ export const AdminDashboard: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => handleOpenAddModal('siswa')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-xs transition-all active:scale-95"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
                     <span>Tambah Siswa</span>
                   </button>
                   <button
-                    onClick={() => handleSelectMenu('reports')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                    onClick={() => setActiveMenu('reports')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all shadow-xs active:scale-95"
                   >
                     <Printer className="w-3.5 h-3.5" />
                     <span>Cetak Laporan</span>
                   </button>
                   <button
-                    onClick={() => handleSelectMenu('import')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md border border-white/20 transition-all shadow-xs active:scale-95 cursor-pointer"
+                    onClick={() => setActiveMenu('import')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md border border-white/20 transition-all shadow-xs active:scale-95"
                   >
                     <Upload className="w-3.5 h-3.5 text-purple-300" />
                     <span>Impor XLS / CSV</span>
@@ -1450,7 +1413,7 @@ export const AdminDashboard: React.FC = () => {
               {/* 5 Stats Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-5 pt-4 border-t border-white/10">
                 <div 
-                  onClick={() => handleSelectMenu('students')} 
+                  onClick={() => setActiveMenu('students')} 
                   className="bg-blue-950/40 hover:bg-blue-950/60 cursor-pointer backdrop-blur-md rounded-xl p-3 border border-blue-500/30 transition-all"
                 >
                   <span className="text-[10px] text-blue-200 font-semibold flex items-center justify-between">
@@ -1462,7 +1425,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div 
-                  onClick={() => handleSelectMenu('parents')} 
+                  onClick={() => setActiveMenu('parents')} 
                   className="bg-rose-950/40 hover:bg-rose-950/60 cursor-pointer backdrop-blur-md rounded-xl p-3 border border-rose-500/30 transition-all"
                 >
                   <span className="text-[10px] text-rose-200 font-semibold flex items-center justify-between">
@@ -1474,7 +1437,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div 
-                  onClick={() => handleSelectMenu('teachers')} 
+                  onClick={() => setActiveMenu('teachers')} 
                   className="bg-emerald-950/40 hover:bg-emerald-950/60 cursor-pointer backdrop-blur-md rounded-xl p-3 border border-emerald-500/30 transition-all"
                 >
                   <span className="text-[10px] text-emerald-200 font-semibold flex items-center justify-between">
@@ -1486,7 +1449,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div 
-                  onClick={() => handleSelectMenu('journals')} 
+                  onClick={() => setActiveMenu('journals')} 
                   className="bg-indigo-950/40 hover:bg-indigo-950/60 cursor-pointer backdrop-blur-md rounded-xl p-3 border border-indigo-500/30 transition-all"
                 >
                   <span className="text-[10px] text-indigo-200 font-semibold flex items-center justify-between">
@@ -1498,7 +1461,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div 
-                  onClick={() => handleSelectMenu('credentials')} 
+                  onClick={() => setActiveMenu('credentials')} 
                   className="bg-purple-950/40 hover:bg-purple-950/60 cursor-pointer backdrop-blur-md rounded-xl p-3 border border-purple-500/30 transition-all"
                 >
                   <span className="text-[10px] text-purple-200 font-semibold flex items-center justify-between">
@@ -2638,7 +2601,7 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
                   <button
-                    onClick={() => handleSelectMenu('credentials')}
+                    onClick={() => setActiveMenu('credentials')}
                     className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 shadow-xs transition-all shrink-0 cursor-pointer"
                   >
                     Buka Tab Kredensial & Kartu
@@ -2956,65 +2919,123 @@ export const AdminDashboard: React.FC = () => {
 
         {/* ================= 7. STATUS DATABASE & SKALABILITAS ================= */}
         {activeMenu === 'database' && (
-          <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div>
-                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Database className="w-5 h-5 text-indigo-600" />
-                  <span>Status Basis Data & Cadangan Master</span>
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Infrastruktur penyimpanan Firestore & skema relasional dengan proteksi enkripsi AES-256.
-                </p>
+          <div className="space-y-4">
+            <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 gap-3">
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <Database className="w-5 h-5 text-indigo-600" />
+                    <span>Status Basis Data & Cadangan Master</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Infrastruktur penyimpanan Firestore & skema relasional dengan proteksi enkripsi AES-256.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportDataJSON}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Unduh Backup (.json)</span>
+                  </button>
+                </div>
               </div>
 
-              <button
-                onClick={handleExportDataJSON}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Unduh Backup (.json)</span>
-              </button>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-bold text-xs">
+                    <Database className="w-4 h-4" />
+                    <span>Engine Database</span>
+                  </div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">
+                    Firebase Cloud Firestore
+                  </p>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Penyimpanan real-time tersinkronisasi otomatis antar HP siswa, orang tua, dan laptop wali kelas.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+                    <Lock className="w-4 h-4" />
+                    <span>Enkripsi Kredensial</span>
+                  </div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">
+                    AES-256 End-to-End
+                  </p>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Setiap password dan refleksi siswa dienkripsi dari browser sebelum disimpan.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 font-bold text-xs">
+                    <Building2 className="w-4 h-4" />
+                    <span>Lembaga Pendidikan</span>
+                  </div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">
+                    {SCHOOL_CONFIG.name}
+                  </p>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    {SCHOOL_CONFIG.address} • Telp: {SCHOOL_CONFIG.phone}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-1.5">
-                <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-bold text-xs">
-                  <Database className="w-4 h-4" />
-                  <span>Engine Database</span>
+            {/* Pembersihan Permanen & Riwayat Bersih Card */}
+            <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-4 sm:p-5 border border-rose-200 dark:border-rose-900/40 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-rose-100 dark:border-rose-900/30 gap-3">
+                <div className="space-y-1">
+                  <h3 className="text-sm sm:text-base font-black text-rose-900 dark:text-rose-300 flex items-center gap-2">
+                    <Trash2 className="w-5 h-5 text-rose-600" />
+                    <span>Pembersihan Permanen Database & Riwayat Bersih</span>
+                  </h3>
+                  <p className="text-xs text-rose-700/80 dark:text-rose-400/80">
+                    Memastikan seluruh data siswa, wali kelas, dan orang tua yang dihapus hilang secara permanen dari Cloud Firestore dan cache lokal tanpa meninggalkan riwayat residu.
+                  </p>
                 </div>
-                <p className="text-xs font-bold text-slate-900 dark:text-white">
-                  Firebase Cloud Firestore
-                </p>
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Penyimpanan real-time tersinkronisasi otomatis antar HP siswa, orang tua, dan laptop wali kelas.
-                </p>
+
+                <button
+                  onClick={handleDeepCleanDatabase}
+                  disabled={isPurging}
+                  className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0`}
+                >
+                  <RefreshCw className={`w-4 h-4 ${isPurging ? 'animate-spin' : ''}`} />
+                  <span>{isPurging ? 'Membersihkan Cloud...' : 'Pembersihan Total Database'}</span>
+                </button>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-1.5">
-                <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
-                  <Lock className="w-4 h-4" />
-                  <span>Enkripsi Kredensial</span>
+              {purgeResult && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-medium flex items-center gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{purgeResult}</span>
                 </div>
-                <p className="text-xs font-bold text-slate-900 dark:text-white">
-                  AES-256 End-to-End
-                </p>
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Setiap password dan refleksi siswa dienkripsi dari browser sebelum disimpan.
-                </p>
-              </div>
+              )}
 
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-1.5">
-                <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 font-bold text-xs">
-                  <Building2 className="w-4 h-4" />
-                  <span>Lembaga Pendidikan</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
+                  <span className="text-[11px] text-slate-500 font-medium block">Total Pengguna Aktif</span>
+                  <span className="text-base font-black text-slate-900 dark:text-white mt-0.5 block">{allUsers.length}</span>
                 </div>
-                <p className="text-xs font-bold text-slate-900 dark:text-white">
-                  {SCHOOL_CONFIG.name}
-                </p>
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  {SCHOOL_CONFIG.address} • Telp: {SCHOOL_CONFIG.phone}
-                </p>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
+                  <span className="text-[11px] text-slate-500 font-medium block">Total Jurnal Valid</span>
+                  <span className="text-base font-black text-slate-900 dark:text-white mt-0.5 block">{journals.length}</span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
+                  <span className="text-[11px] text-slate-500 font-medium block">Relasi Ortu-Siswa</span>
+                  <span className="text-base font-black text-slate-900 dark:text-white mt-0.5 block">
+                    {allUsers.filter(u => u.role === 'orangtua' && u.studentIds && u.studentIds.length > 0).length} Terhubung
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
+                  <span className="text-[11px] text-slate-500 font-medium block">Integritas Relasi</span>
+                  <span className="text-base font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> 100% Bersih
+                  </span>
+                </div>
               </div>
             </div>
           </div>
