@@ -156,6 +156,52 @@ export const normalizeClassCode = (cn?: string): string => {
   return str.replace(/[^a-z0-9]/g, '');
 };
 
+/**
+ * Ekstraksi angka nomor absen untuk pengurutan numerik yang akurat (1, 2, ... 10, dst)
+ */
+export const getAbsenSortValue = (u?: { attendanceNumber?: string; noAbsen?: string } | null): number => {
+  if (!u) return 9999;
+  const val = u.attendanceNumber || u.noAbsen;
+  if (!val) return 9999;
+  const clean = String(val).trim();
+  const parsed = parseInt(clean.replace(/\D/g, ''), 10);
+  return isNaN(parsed) ? 9999 : parsed;
+};
+
+/**
+ * Pembanding urutan siswa:
+ * 1. Kelas (jika lintas kelas, misal 7A sebelum 7B)
+ * 2. Urut Nomor Absen numerik (01, 02, 03... 32)
+ * 3. Fallback NIS numerik
+ * 4. Fallback Alfabet nama siswa
+ */
+export const compareStudentsByAbsen = (a: User, b: User): number => {
+  // 1. Urutkan berdasarkan Kelas jika kelas berbeda
+  const classA = normalizeClassName(a.className) || a.className || '';
+  const classB = normalizeClassName(b.className) || b.className || '';
+  if (classA !== classB) {
+    const classComp = classA.localeCompare(classB, undefined, { numeric: true, sensitivity: 'base' });
+    if (classComp !== 0) return classComp;
+  }
+
+  // 2. Urutkan berdasarkan Nomor Absen secara numerik
+  const absenA = getAbsenSortValue(a);
+  const absenB = getAbsenSortValue(b);
+  if (absenA !== absenB) {
+    return absenA - absenB;
+  }
+
+  // 3. Fallback NIS
+  const nisA = parseInt(String(a.nis || a.nisn || '0').replace(/\D/g, ''), 10) || 0;
+  const nisB = parseInt(String(b.nis || b.nisn || '0').replace(/\D/g, ''), 10) || 0;
+  if (nisA !== nisB && nisA > 0 && nisB > 0) {
+    return nisA - nisB;
+  }
+
+  // 4. Fallback Nama alfabetis
+  return (a.name || '').localeCompare(b.name || '', 'id-ID', { sensitivity: 'base' });
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [allUsers, setAllUsers] = useState<User[]>(() => {
     const deletedIds = getDeletedUserIds();
@@ -1257,6 +1303,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       newStudents.push(studentUser);
       count++;
     }
+
+    // Pastikan siswa baru selalu tersusun rapi urut nomor absen
+    newStudents.sort(compareStudentsByAbsen);
 
     setAllUsers(prev => {
       // Remove any previous conflicting IDs, then prepend new ones

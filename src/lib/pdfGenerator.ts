@@ -1142,8 +1142,20 @@ export class PDFReportGenerator {
 
     const daysInMonth = getDaysInMonth(monthName);
 
-    // 4. Students Detail Table
-    const tableBody = studentsList.map((item, idx) => [
+    // 4. Students Detail Table (Urut Absen)
+    const sortedStudentsList = [...studentsList].sort((a, b) => {
+      const getNum = (u: any) => {
+        const val = u?.attendanceNumber || u?.noAbsen;
+        if (!val) return 9999;
+        const n = parseInt(String(val).replace(/\D/g, ''), 10);
+        return isNaN(n) ? 9999 : n;
+      };
+      const diff = getNum(a.student) - getNum(b.student);
+      if (diff !== 0) return diff;
+      return (a.student.name || '').localeCompare(b.student.name || '');
+    });
+
+    const tableBody = sortedStudentsList.map((item, idx) => [
       (idx + 1).toString(),
       item.student.nis || item.student.nisn || '-',
       item.student.attendanceNumber || item.student.noAbsen || '-',

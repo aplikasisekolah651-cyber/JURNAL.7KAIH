@@ -40,7 +40,7 @@ import {
   Tooltip, 
   CartesianGrid 
 } from 'recharts';
-import { useAuth, normalizeClassName } from '../../context/AuthContext';
+import { useAuth, normalizeClassName, compareStudentsByAbsen } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
 import { HABIT_LIST, KATEGORI_CONFIG, SCHOOL_CONFIG, isJournalParentValidated, getDaysInMonth, getCurrentRunningMonthStr, isDateInMonth } from '../../lib/constants';
@@ -129,11 +129,15 @@ export const TeacherDashboard: React.FC = () => {
   const selectedClassObj = availableClasses.find(c => c.id === selectedClassId) || availableClasses[0];
   const selectedClassName = selectedClassObj?.rawName || '7A';
 
-  // Get students in this class matching by classId or className
-  const classStudents = allUsers.filter(u => {
-    if (u.role !== 'siswa') return false;
-    return u.classId === selectedClassId || u.className === selectedClassName;
-  });
+  // Get students in this class matching by classId or className, sorted strictly by Attendance Number (urut absen)
+  const classStudents = useMemo(() => {
+    return allUsers
+      .filter(u => {
+        if (u.role !== 'siswa') return false;
+        return u.classId === selectedClassId || (normalizeClassName(u.className) || u.className) === selectedClassName;
+      })
+      .sort(compareStudentsByAbsen);
+  }, [allUsers, selectedClassId, selectedClassName]);
   const classStudentIds = classStudents.map(s => s.id);
 
   // Classroom Analysis Summary
@@ -520,10 +524,15 @@ export const TeacherDashboard: React.FC = () => {
         {/* Table Header Controls */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-              Rekapitulasi Perkembangan Seluruh Murid
-            </h3>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                Rekapitulasi Perkembangan Murid ({selectedClassName})
+              </h3>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                Urut Absen (1 s.d. 32)
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
               Klasifikasi otomatis status keterbiasaan 7 KAIH dan bimbingan wali kelas
             </p>
           </div>
@@ -597,7 +606,12 @@ export const TeacherDashboard: React.FC = () => {
               <tr>
                 <th className="p-2.5 rounded-l-lg">No</th>
                 <th className="p-2.5">Nama Siswa & NIS</th>
-                <th className="p-2.5 text-center">No Absen</th>
+                <th className="p-2.5 text-center text-indigo-600 dark:text-indigo-400 font-extrabold" title="Daftar murid tersusun rapi urut nomor absen">
+                  <div className="inline-flex items-center justify-center gap-1">
+                    <span>No. Absen</span>
+                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-1 py-0.2 rounded">▲</span>
+                  </div>
+                </th>
                 <th className="p-2.5 text-center">
                   <div>Keterisian Tervalidasi</div>
                   <div className="text-[8px] font-normal normal-case text-slate-400 dark:text-slate-500">

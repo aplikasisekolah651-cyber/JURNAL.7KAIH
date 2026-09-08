@@ -38,7 +38,7 @@ import {
   CheckSquare,
   Square
 } from 'lucide-react';
-import { useAuth, normalizeClassName } from '../../context/AuthContext';
+import { useAuth, normalizeClassName, compareStudentsByAbsen } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
 import { User, UserRole } from '../../types';
@@ -298,8 +298,12 @@ export const AdminDashboard: React.FC = () => {
   const [credentialViewMode, setCredentialViewMode] = useState<'family' | 'individual'>('family');
   const [broadcastCopied, setBroadcastCopied] = useState(false);
 
-  // Computed Users by Role
-  const students = useMemo(() => allUsers.filter(u => u.role === 'siswa'), [allUsers]);
+  // Student Table Sorting State: Default urut absen ascending
+  const [studentSortField, setStudentSortField] = useState<'absen' | 'name' | 'nis'>('absen');
+  const [studentSortOrder, setStudentSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // Computed Users by Role (Siswa selalu terurut rapi berdasarkan nomor absen)
+  const students = useMemo(() => allUsers.filter(u => u.role === 'siswa').sort(compareStudentsByAbsen), [allUsers]);
   const parents = useMemo(() => allUsers.filter(u => u.role === 'orangtua'), [allUsers]);
   const teachers = useMemo(() => allUsers.filter(u => u.role === 'walikelas'), [allUsers]);
   const admins = useMemo(() => allUsers.filter(u => u.role === 'admin'), [allUsers]);
@@ -799,9 +803,9 @@ export const AdminDashboard: React.FC = () => {
     return results;
   }, [teacherImportText]);
 
-  // Filtered Students
+  // Filtered Students (Urut Absen secara default)
   const filteredStudents = useMemo(() => {
-    return students.filter(s => {
+    const list = students.filter(s => {
       const matchClass = selectedClass === 'all' || (normalizeClassName(s.className) || s.className) === selectedClass;
       const matchSearch = s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
                           (s.nis && s.nis.includes(studentSearch)) ||
@@ -811,7 +815,23 @@ export const AdminDashboard: React.FC = () => {
                           s.email.toLowerCase().includes(studentSearch.toLowerCase());
       return matchClass && matchSearch;
     });
-  }, [students, selectedClass, studentSearch]);
+
+    return list.sort((a, b) => {
+      if (studentSortField === 'absen') {
+        const res = compareStudentsByAbsen(a, b);
+        return studentSortOrder === 'asc' ? res : -res;
+      } else if (studentSortField === 'name') {
+        const res = (a.name || '').localeCompare(b.name || '', 'id-ID', { sensitivity: 'base' });
+        return studentSortOrder === 'asc' ? res : -res;
+      } else if (studentSortField === 'nis') {
+        const nisA = parseInt(String(a.nis || a.nisn || '0').replace(/\D/g, ''), 10) || 0;
+        const nisB = parseInt(String(b.nis || b.nisn || '0').replace(/\D/g, ''), 10) || 0;
+        const res = nisA - nisB;
+        return studentSortOrder === 'asc' ? res : -res;
+      }
+      return 0;
+    });
+  }, [students, selectedClass, studentSearch, studentSortField, studentSortOrder]);
 
   // Filtered Parents
   const filteredParents = useMemo(() => {
@@ -1711,11 +1731,12 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Copy WhatsApp Broadcast Text for Selected Class
+  // Copy WhatsApp Broadcast Text for Selected Class (Urut Absen)
   const handleCopyWhatsAppBroadcast = (targetClass: string) => {
-    const list = targetClass === 'all' 
+    const list = (targetClass === 'all' 
       ? students 
-      : students.filter(s => s.className === targetClass);
+      : students.filter(s => (normalizeClassName(s.className) || s.className) === targetClass)
+    ).slice().sort(compareStudentsByAbsen);
 
     let text = `📋 *KREDENSIAL LOGIN JURNAL 7 KAIH*\n`;
     text += `🏫 *SMP NEGERI 2 KASIHAN*\n`;
@@ -1775,12 +1796,19 @@ export const AdminDashboard: React.FC = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Filtered Users for Credentials Batch Print
+  // Filtered Users for Credentials Batch Print (Urut Absen untuk Siswa)
   const batchCredentialUsers = useMemo(() => {
-    return allUsers.filter(u => {
+    const list = allUsers.filter(u => {
       const matchRole = credentialFilterRole === 'all' || u.role === credentialFilterRole;
-      const matchClass = credentialFilterClass === 'all' || u.className === credentialFilterClass;
+      const matchClass = credentialFilterClass === 'all' || (normalizeClassName(u.className) || u.className) === credentialFilterClass;
       return matchRole && matchClass;
+    });
+
+    return list.sort((a, b) => {
+      if (a.role === 'siswa' && b.role === 'siswa') {
+        return compareStudentsByAbsen(a, b);
+      }
+      return 0;
     });
   }, [allUsers, credentialFilterRole, credentialFilterClass]);
 
@@ -2203,8 +2231,11 @@ export const AdminDashboard: React.FC = () => {
                   <GraduationCap className="w-5 h-5 text-indigo-600" />
                   <span>Manajemen Siswa Berdasarkan Kelas</span>
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Total: <strong>{students.length} Siswa Terdaftar</strong> di SMP Negeri 2 Kasihan
+                <p className="text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-2 mt-0.5">
+                  <span>Total: <strong>{students.length} Siswa Terdaftar</strong></span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                    Urut Absen (1 s.d. 32)
+                  </span>
                 </p>
               </div>
 
@@ -2301,8 +2332,52 @@ export const AdminDashboard: React.FC = () => {
                         title="Pilih Semua di Halaman Ini"
                       />
                     </th>
-                    <th className="p-3">Siswa & NIS</th>
-                    <th className="p-3 text-center">No. Absen</th>
+                    <th 
+                      onClick={() => {
+                        if (studentSortField === 'name') {
+                          setStudentSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setStudentSortField('name');
+                          setStudentSortOrder('asc');
+                        }
+                      }}
+                      className="p-3 cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Klik untuk mengurutkan berdasarkan Nama Siswa"
+                    >
+                      <div className="inline-flex items-center gap-1">
+                        <span className={studentSortField === 'name' ? 'text-indigo-600 dark:text-indigo-400 font-extrabold' : ''}>Siswa & NIS</span>
+                        {studentSortField === 'name' ? (
+                          <span className="text-[10px] px-1 py-0.2 rounded font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                            {studentSortOrder === 'asc' ? '▲ A-Z' : '▼ Z-A'}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-300 dark:text-slate-600">⇅</span>
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => {
+                        if (studentSortField === 'absen') {
+                          setStudentSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setStudentSortField('absen');
+                          setStudentSortOrder('asc');
+                        }
+                      }}
+                      className="p-3 text-center cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Klik untuk mengubah urutan Nomor Absen (Default urut absen 1..32)"
+                    >
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <span className={studentSortField === 'absen' ? 'text-indigo-600 dark:text-indigo-400 font-extrabold' : ''}>No. Absen</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                          studentSortField === 'absen' 
+                            ? 'bg-indigo-100 dark:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-300 dark:ring-indigo-700' 
+                            : 'text-slate-400'
+                        }`}>
+                          {studentSortField === 'absen' ? (studentSortOrder === 'asc' ? '▲ Urut (1..32)' : '▼ (32..1)') : '⇅'}
+                        </span>
+                      </div>
+                    </th>
                     <th className="p-3 text-center">L/P</th>
                     <th className="p-3">Kelas</th>
                     <th className="p-3">Username (NIS)</th>

@@ -29,7 +29,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { useAuth, normalizeClassName } from '../../context/AuthContext';
+import { useAuth, normalizeClassName, compareStudentsByAbsen } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
 import { PDFReportGenerator } from '../../lib/pdfGenerator';
@@ -86,7 +86,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
   // Collective Report States
   const [selectedClassForCollect, setSelectedClassForCollect] = useState<string>('7A');
 
-  const students = useMemo(() => allUsers.filter(u => u.role === 'siswa'), [allUsers]);
+  const students = useMemo(() => allUsers.filter(u => u.role === 'siswa').sort(compareStudentsByAbsen), [allUsers]);
   const teachers = useMemo(() => allUsers.filter(u => u.role === 'walikelas'), [allUsers]);
 
   const availableClasses = useMemo(() => {
@@ -217,9 +217,11 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
     }
   };
 
-  // Batch Print Detailed 7KAIH Reports for All Students in a Class
+  // Batch Print Detailed 7KAIH Reports for All Students in a Class (Urut Absen)
   const handleBatchPrintDetailedClass = (targetClass: string) => {
-    const targetStudents = students.filter(s => s.className === targetClass);
+    const targetStudents = students
+      .filter(s => (normalizeClassName(s.className) || s.className) === targetClass)
+      .sort(compareStudentsByAbsen);
     if (targetStudents.length === 0) {
       alert(`Tidak ada siswa di kelas ${targetClass}.`);
       return;
@@ -314,9 +316,11 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
     audioNotifier.playSuccessChime();
   };
 
-  // Collective Class Data
+  // Collective Class Data (Urut Absen)
   const classStudents = useMemo(() => {
-    return students.filter(s => normalizeClassName(s.className) === selectedClassForCollect);
+    return students
+      .filter(s => (normalizeClassName(s.className) || s.className) === selectedClassForCollect)
+      .sort(compareStudentsByAbsen);
   }, [students, selectedClassForCollect]);
 
   const classTeacher = useMemo(() => {
@@ -362,9 +366,11 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
     });
   }, [classStudents, getStudentJournals, journals, selectedMonth]);
 
-  // Export Collective Class PDF
+  // Export Collective Class PDF (Urut Absen)
   const handlePrintCollectiveClassPDF = (targetClass: string) => {
-    const targetStudents = students.filter(s => normalizeClassName(s.className) === targetClass);
+    const targetStudents = students
+      .filter(s => (normalizeClassName(s.className) || s.className) === targetClass)
+      .sort(compareStudentsByAbsen);
     const targetStudentIds = targetStudents.map(s => s.id);
     const targetAnalysis = getClassAnalysis(targetClass, targetStudentIds, true);
     const targetTeacherObj = PDFReportGenerator.getTeacherForClass(targetClass, allUsers);
@@ -852,11 +858,14 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
           {/* Classroom Table of Students */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
+              <div className="flex flex-wrap items-center gap-2">
                 <h4 className="text-xs font-bold text-slate-900 dark:text-white">
                   Daftar Murid {selectedClassForCollect} ({classStudentRows.length} Siswa):
                 </h4>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 italic">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                  Urut Absen (1 s.d. 32)
+                </span>
+                <p className="w-full text-[10px] text-slate-500 dark:text-slate-400 italic">
                   * Kebijakan: Rekapitulasi laporan hanya menghitung jurnal yang telah diverifikasi & divalidasi oleh orang tua.
                 </p>
               </div>
@@ -871,7 +880,12 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
                   <tr>
                     <th className="p-3 text-center w-12">No</th>
                     <th className="p-3">NIS</th>
-                    <th className="p-3 text-center">No Absen</th>
+                    <th className="p-3 text-center text-purple-600 dark:text-purple-400 font-extrabold" title="Urut Absen">
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <span>No. Absen</span>
+                        <span className="text-[10px] bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 px-1 py-0.2 rounded">▲</span>
+                      </div>
+                    </th>
                     <th className="p-3">Nama Siswa</th>
                     <th className="p-3 text-center">
                       <div>Keterisian Tervalidasi</div>
@@ -985,11 +999,14 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
                   onChange={(e) => setSelectedStudentId(e.target.value)}
                   className="px-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold outline-none focus:border-indigo-500 max-w-[260px] truncate"
                 >
-                  {filteredStudents.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.className || '7A'}) - NIS: {s.nis || s.nisn || '-'}
-                    </option>
-                  ))}
+                  {filteredStudents.map(s => {
+                    const absen = s.attendanceNumber || s.noAbsen;
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {absen ? `[Absen ${absen}] ` : ''}{s.name} ({s.className || '7A'}) - NIS: {s.nis || s.nisn || '-'}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
