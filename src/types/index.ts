@@ -18,6 +18,8 @@ export interface User {
   className?: string;
   parentId?: string; // If siswa, links to Orang Tua
   studentIds?: string[]; // If orangtua, links to Siswa
+  parentName?: string; // Optional metadata: nama orang tua siswa
+  parentPhone?: string; // Optional metadata: telepon orang tua siswa
   assignedClassIds?: string[]; // If walikelas, links to Classes
   schoolName?: string;
   password?: string; // Generated password

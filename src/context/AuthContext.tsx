@@ -52,6 +52,7 @@ interface AuthContextType {
   }[]) => Promise<number>;
   generateNewCredentials: (userId: string) => Promise<string>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
+  syncParentAccounts: () => Promise<{ createdCount: number; updatedCount: number }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -202,6 +203,137 @@ export const compareStudentsByAbsen = (a: User, b: User): number => {
   return (a.name || '').localeCompare(b.name || '', 'id-ID', { sensitivity: 'base' });
 };
 
+/**
+ * Standardize Orang Tua accounts:
+ * - Username: ortu.[NIS]
+ * - Password: ortu[NIS]
+ * - Automatically ensures every student with a NIS has a linked parent account.
+ */
+export const ensureParentCredentialsConsistent = (userList: User[]): { updatedUsers: User[]; hasChanges: boolean } => {
+  let hasChanges = false;
+  const deletedIds = getDeletedUserIds();
+  const validUsers = userList.filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u));
+  const students = validUsers.filter(u => u.role === 'siswa');
+  const parentMap = new Map<string, User>();
+  const otherUsers: User[] = [];
+
+  validUsers.forEach(u => {
+    if (u.role === 'orangtua') {
+      parentMap.set(u.id, { ...u });
+    } else if (u.role !== 'siswa') {
+      otherUsers.push(u);
+    }
+  });
+
+  const updatedStudents: User[] = [];
+
+  students.forEach(student => {
+    const studentNis = (student.nis || student.nisn || '').trim();
+    if (!studentNis) {
+      updatedStudents.push(student);
+      return;
+    }
+
+    const expectedEmail = `ortu.${studentNis}`;
+    const expectedPassword = `ortu${studentNis}`;
+
+    // Find parent linked by parentId, studentIds, email, or id
+    let matchedParent = Array.from(parentMap.values()).find(p => 
+      (student.parentId && p.id === student.parentId) || 
+      (p.studentIds && p.studentIds.includes(student.id)) ||
+      p.email?.toLowerCase() === expectedEmail.toLowerCase() ||
+      p.email?.toLowerCase() === `ortu${studentNis}`.toLowerCase() ||
+      p.id === `usr-ortu-${studentNis}`
+    );
+
+    let currentStudent = { ...student };
+
+    if (matchedParent) {
+      const currentPwd = matchedParent.password || '';
+      const currentEmail = matchedParent.email || '';
+      let parentUpdated = false;
+
+      // Always standardize username to ortu.[NIS]
+      if (currentEmail !== expectedEmail) {
+        matchedParent.email = expectedEmail;
+        parentUpdated = true;
+      }
+      
+      // Enforce password to ortu[NIS] if empty, default, or starts with ortu
+      if (!currentPwd || currentPwd === 'ortu123#Secure' || currentPwd === 'ortu123#' || currentPwd === 'ortu123' || currentPwd.toLowerCase().startsWith('ortu')) {
+        if (currentPwd !== expectedPassword) {
+          matchedParent.password = expectedPassword;
+          parentUpdated = true;
+        }
+      }
+
+      if (!matchedParent.studentIds || !matchedParent.studentIds.includes(student.id)) {
+        matchedParent.studentIds = Array.from(new Set([...(matchedParent.studentIds || []), student.id]));
+        parentUpdated = true;
+      }
+
+      if (currentStudent.parentId !== matchedParent.id) {
+        currentStudent.parentId = matchedParent.id;
+        hasChanges = true;
+      }
+
+      if (parentUpdated) {
+        parentMap.set(matchedParent.id, matchedParent);
+        hasChanges = true;
+      }
+    } else {
+      // Check if this parent or student's parent account was deleted by admin
+      const newParentId = `usr-ortu-${studentNis}`;
+      if (
+        deletedIds.has(newParentId) || 
+        (student.parentId && deletedIds.has(student.parentId)) || 
+        deletedIds.has(expectedEmail) || 
+        deletedIds.has(`usr-ortu-${student.id}`)
+      ) {
+        updatedStudents.push(currentStudent);
+        return;
+      }
+
+      // Auto-generate missing parent for student with NIS
+      const pName = student.parentName ? (student.parentName.includes('(Ortu') ? student.parentName : `${student.parentName} (Ortu ${student.name})`) : `Orang Tua dari ${student.name}`;
+      const newParent: User = {
+        id: newParentId,
+        name: pName,
+        email: expectedEmail,
+        role: 'orangtua',
+        studentIds: [student.id],
+        phone: student.parentPhone || student.phone || '08123456789',
+        avatar: DATA_URI_ORANG_TUA,
+        password: expectedPassword,
+        schoolName: student.schoolName || 'SMP Negeri 2 Kasihan',
+        createdAt: new Date().toISOString()
+      };
+      parentMap.set(newParentId, newParent);
+      currentStudent.parentId = newParentId;
+      hasChanges = true;
+    }
+
+    updatedStudents.push(currentStudent);
+  });
+
+  // Deduplicate parents in parentMap by email and id
+  const uniqueParents = new Map<string, User>();
+  parentMap.forEach((p) => {
+    const pKey = (p.email?.toLowerCase().trim() || p.id);
+    if (!uniqueParents.has(pKey)) {
+      uniqueParents.set(pKey, p);
+    } else {
+      // Merge studentIds into the existing one
+      const existing = uniqueParents.get(pKey)!;
+      existing.studentIds = Array.from(new Set([...(existing.studentIds || []), ...(p.studentIds || [])]));
+      hasChanges = true;
+    }
+  });
+
+  const allUpdated = [...otherUsers, ...updatedStudents, ...Array.from(uniqueParents.values())];
+  return { updatedUsers: allUpdated, hasChanges };
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [allUsers, setAllUsers] = useState<User[]>(() => {
     const deletedIds = getDeletedUserIds();
@@ -217,19 +349,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               className: u.className ? (normalizeClassName(u.className) || u.className) : u.className,
               avatar: getUserAvatarUrl(u)
             }));
-          if (filtered.length > 0) return filtered;
+          if (filtered.length > 0) {
+            const { updatedUsers } = ensureParentCredentialsConsistent(filtered);
+            return updatedUsers;
+          }
         }
       } catch (e) {
         console.error('Failed to parse cached users:', e);
       }
     }
-    return DEMO_USERS
+    const baseUsers = DEMO_USERS
       .filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u))
       .map(u => ({
         ...u,
         className: u.className ? (normalizeClassName(u.className) || u.className) : u.className,
         avatar: getUserAvatarUrl(u)
       }));
+    const { updatedUsers } = ensureParentCredentialsConsistent(baseUsers);
+    return updatedUsers;
   });
 
   const [currentUser, setCurrentUserState] = useState<User>(() => {
@@ -358,6 +495,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [allUsers]);
 
+  // One-time startup check: standardizes all parent accounts to ortu.[NIS] and ortu[NIS]
+  useEffect(() => {
+    const { updatedUsers, hasChanges } = ensureParentCredentialsConsistent(allUsers);
+    if (hasChanges) {
+      setAllUsers(updatedUsers);
+      try {
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
+      } catch (e) {
+        console.warn('LocalStorage sync parent warning:', e);
+      }
+      if (db) {
+        const parents = updatedUsers.filter(u => u.role === 'orangtua');
+        const batch = writeBatch(db);
+        parents.forEach(p => {
+          batch.set(doc(db, 'users', p.id), cleanForFirestore(p), { merge: true });
+        });
+        batch.commit().catch(e => console.warn('Sync consistent parents to cloud warning:', e));
+      }
+    }
+  }, []);
+
   // Helper to safely merge remote users from Firestore with local state
   const mergeFirestoreUsers = (prevUsers: User[], firestoreUsers: User[]): User[] => {
     const deletedIds = getDeletedUserIds();
@@ -395,7 +553,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       });
 
-    return Array.from(map.values());
+    const rawList = Array.from(map.values());
+    const { updatedUsers } = ensureParentCredentialsConsistent(rawList);
+    return updatedUsers;
   };
 
   // Seed default demo users to Firestore if collection is empty
@@ -500,18 +660,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const findUserByIdentifier = (userList: User[], cleaned: string, rawPassword?: string): User | undefined => {
-    const rawClean = cleaned.replace(/\s+/g, '');
-    const cleanNoSpecial = cleaned.replace(/[^a-z0-9]/g, '');
-    const cleanPwd = (rawPassword || '').trim().toLowerCase();
+    // Strip brackets e.g. ortu.[2401] -> ortu.2401, [2401] -> 2401
+    const unbracketed = cleaned.replace(/[\[\]]/g, '');
+    const rawClean = unbracketed.replace(/\s+/g, '');
+    const cleanNoSpecial = unbracketed.replace(/[^a-z0-9]/g, '');
+    const cleanPwd = (rawPassword || '').trim().toLowerCase().replace(/[\[\]]/g, '');
 
     // 1. Check if user typed role-specific prefix or intent
-    const isParentIntent = cleaned.startsWith('ortu') || cleanPwd.startsWith('ortu');
-    const isTeacherIntent = cleaned.startsWith('wali') || cleaned.startsWith('guru');
-    const isAdminIntent = cleaned.startsWith('admin');
+    const isParentIntent = unbracketed.startsWith('ortu') || cleanPwd.startsWith('ortu');
+    const isTeacherIntent = unbracketed.startsWith('wali') || unbracketed.startsWith('guru');
+    const isAdminIntent = unbracketed.startsWith('admin');
 
     // Priority 1: Direct matches based on explicit role intent
     if (isTeacherIntent) {
-      const teacherTargetCode = normalizeClassCode(cleaned.replace(/^(wali|guru)[._-]*/, ''));
+      const teacherTargetCode = normalizeClassCode(unbracketed.replace(/^(wali|guru)[._-]*/, ''));
       const foundTeacher = userList.find(u => {
         if (u.role !== 'walikelas') return false;
         const uClassCode = normalizeClassCode(u.className);
@@ -520,37 +682,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const uName = (u.name || '').toLowerCase().trim();
 
         if (teacherTargetCode && (uClassCode === teacherTargetCode || uAssigned.includes(teacherTargetCode))) return true;
-        if (uEmail === cleaned || uEmail.replace(/[^a-z0-9]/g, '') === cleanNoSpecial) return true;
-        if (uName.includes(cleaned) || cleaned.includes(uName)) return true;
+        if (uEmail === unbracketed || uEmail.replace(/[^a-z0-9]/g, '') === cleanNoSpecial) return true;
+        if (uName.includes(unbracketed) || unbracketed.includes(uName)) return true;
         return false;
       });
       if (foundTeacher) return foundTeacher;
     }
 
     if (isParentIntent) {
-      const parentTargetNis = cleaned.replace(/^ortu[._-]*/, '').replace(/[^0-9]/g, '');
+      const parentTargetNis = unbracketed.replace(/^ortu[._-]*/, '').replace(/[^0-9]/g, '') ||
+                              cleanPwd.replace(/^ortu[._-]*/, '').replace(/[^0-9]/g, '');
       const foundParent = userList.find(u => {
         if (u.role !== 'orangtua') return false;
         const uEmail = (u.email || '').toLowerCase().trim();
         const uPhone = (u.phone || '').replace(/[^0-9]/g, '');
         const uName = (u.name || '').toLowerCase().trim();
 
-        if (uEmail === cleaned || uEmail.replace(/[^a-z0-9]/g, '') === cleanNoSpecial) return true;
+        if (uEmail === unbracketed || uEmail.replace(/[^a-z0-9]/g, '') === cleanNoSpecial) return true;
         if (parentTargetNis && (uEmail.includes(parentTargetNis) || u.id.includes(parentTargetNis))) return true;
 
-        if (parentTargetNis && u.studentIds && u.studentIds.length > 0) {
-          const linkedStudents = userList.filter(s => u.studentIds?.includes(s.id));
+        if (parentTargetNis) {
+          const linkedStudents = userList.filter(s => (u.studentIds && u.studentIds.includes(s.id)) || s.parentId === u.id);
           for (const s of linkedStudents) {
             const childNis = (s.nis || s.nisn || '').toLowerCase().trim();
             if (childNis && childNis === parentTargetNis) return true;
           }
         }
 
-        if (uPhone && uPhone.length >= 8 && uPhone === cleaned.replace(/[^0-9]/g, '')) return true;
-        if (uName === cleaned || (uName.length > 3 && uName.includes(cleaned))) return true;
+        if (uPhone && uPhone.length >= 8 && uPhone === unbracketed.replace(/[^0-9]/g, '')) return true;
+        if (uName === unbracketed || (uName.length > 3 && uName.includes(unbracketed))) return true;
         return false;
       });
       if (foundParent) return foundParent;
+
+      // Auto-fallback: if parent account not yet created, search for student with this NIS
+      if (parentTargetNis) {
+        const student = userList.find(s => s.role === 'siswa' && ((s.nis && s.nis.trim() === parentTargetNis) || (s.nisn && s.nisn.trim() === parentTargetNis)));
+        if (student) {
+          const newParent: User = {
+            id: student.parentId || `usr-ortu-${parentTargetNis}`,
+            name: `Orang Tua dari ${student.name}`,
+            email: `ortu.${parentTargetNis}`,
+            role: 'orangtua',
+            studentIds: [student.id],
+            phone: student.phone || '08123456789',
+            avatar: DATA_URI_ORANG_TUA,
+            password: `ortu${parentTargetNis}`,
+            schoolName: student.schoolName || 'SMP Negeri 2 Kasihan',
+            createdAt: new Date().toISOString()
+          };
+          return newParent;
+        }
+      }
     }
 
     if (isAdminIntent) {
@@ -619,24 +802,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // Parent aliases: "ortu.23451", "ortu_23451", "ortu23451", child's NIS
+      // Parent aliases: "ortu.23451", "ortu_23451", "ortu23451", "ortu.[23451]", child's NIS
       if (u.role === 'orangtua') {
         if (uEmailPrefix.replace(/[^a-z0-9]/g, '') === cleanNoSpecial) return true;
 
-        if (u.studentIds && u.studentIds.length > 0) {
-          const linkedStudents = userList.filter(s => u.studentIds?.includes(s.id));
-          for (const s of linkedStudents) {
-            const childNis = (s.nis || s.nisn || '').toLowerCase().trim();
-            if (childNis) {
-              if (
-                cleaned === `ortu.${childNis}` ||
-                cleaned === `ortu_${childNis}` ||
-                cleaned === `ortu-${childNis}` ||
-                cleaned === `ortu${childNis}` ||
-                cleaned === `ortu.${childNis}@sekolah.id` ||
-                (isParentIntent && cleaned === childNis)
-              ) return true;
-            }
+        const pNis = (u.email || '').replace(/^ortu[._-]*/i, '').replace(/[^0-9]/g, '') ||
+                     (u.id || '').replace(/^usr-ortu-?/i, '').replace(/[^0-9]/g, '');
+
+        if (pNis) {
+          if (
+            cleaned === `ortu.${pNis}` ||
+            cleaned === `ortu_${pNis}` ||
+            cleaned === `ortu-${pNis}` ||
+            cleaned === `ortu${pNis}` ||
+            cleaned === `ortu.[${pNis}]` ||
+            cleanNoSpecial === `ortu${pNis}` ||
+            (isParentIntent && cleaned === pNis)
+          ) return true;
+        }
+
+        const linkedStudents = userList.filter(s => 
+          (u.studentIds && u.studentIds.includes(s.id)) || 
+          s.parentId === u.id ||
+          (Boolean(pNis) && (s.nis === pNis || s.nisn === pNis))
+        );
+        for (const s of linkedStudents) {
+          const childNis = (s.nis || s.nisn || '').toLowerCase().trim();
+          if (childNis) {
+            if (
+              cleaned === `ortu.${childNis}` ||
+              cleaned === `ortu_${childNis}` ||
+              cleaned === `ortu-${childNis}` ||
+              cleaned === `ortu${childNis}` ||
+              cleaned === `ortu.[${childNis}]` ||
+              cleanNoSpecial === `ortu${childNis}` ||
+              cleaned === `ortu.${childNis}@sekolah.id` ||
+              (isParentIntent && cleaned === childNis)
+            ) return true;
           }
         }
       }
@@ -741,17 +943,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           cleanPwd === 'siswa123' ||
           cleanPwd === '123456';
       } else if (found.role === 'orangtua') {
-        const linkedStudents = userPool.filter(s => found.studentIds?.includes(s.id));
+        const linkedStudents = userPool.filter(s => (found.studentIds && found.studentIds.includes(s.id)) || s.parentId === found.id);
         const childNisList = linkedStudents.map(s => (s.nis || s.nisn || '').toLowerCase().trim()).filter(Boolean);
+        const emailNis = (found.email || '').replace(/^ortu[._-]*/i, '').replace(/[^0-9]/g, '');
+        if (emailNis && !childNisList.includes(emailNis)) {
+          childNisList.push(emailNis);
+        }
+        const cleanPwdNoBracket = cleanPwd.replace(/[\[\]]/g, '');
         const childNisMatch = childNisList.some(nis => 
           cleanPwd.toLowerCase() === `ortu${nis}` || 
           cleanPwd.toLowerCase() === `ortu.${nis}` || 
           cleanPwd.toLowerCase() === `ortu_${nis}` || 
           cleanPwd.toLowerCase() === `ortu-${nis}` || 
-          cleanPwd.toLowerCase() === nis
+          cleanPwd.toLowerCase() === nis ||
+          cleanPwdNoBracket.toLowerCase() === `ortu${nis}` ||
+          cleanPwdNoBracket.toLowerCase() === `ortu.${nis}` ||
+          cleanPwdNoBracket.toLowerCase() === `ortu_${nis}` ||
+          cleanPwdNoBracket.toLowerCase() === `ortu-${nis}` ||
+          cleanPwdNoBracket.toLowerCase() === nis
         );
         isPasswordValid = 
           childNisMatch || 
+          (Boolean(found.password) && (
+            cleanPwd === (found.password || '').trim() ||
+            cleanPwdNoBracket === (found.password || '').trim().replace(/[\[\]]/g, '')
+          )) ||
           cleanPwd === 'ortu123#' || 
           cleanPwd === 'ortu123#Secure' || 
           cleanPwd === 'ortu123' ||
@@ -783,6 +999,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
+    if (!allUsers.some(u => u.id === found.id)) {
+      setAllUsers(prev => [found, ...prev]);
+    }
     setCurrentUserState(found);
     setIsAuthenticated(true);
     localStorage.setItem(AUTH_SESSION_KEY, found.id);
@@ -822,6 +1041,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newId = userData.id || `usr-${userData.role || 'siswa'}-${Date.now()}`;
     const userNis = userData.nis || userData.nisn;
     const userAbsen = userData.attendanceNumber || userData.noAbsen;
+
+    // For orang tua, determine linked child NIS if available
+    let parentChildNis = userData.nis || userData.nisn;
+    if (!parentChildNis && userData.studentIds && userData.studentIds.length > 0) {
+      const linked = allUsers.find(s => userData.studentIds?.includes(s.id));
+      parentChildNis = linked?.nis || linked?.nisn;
+    }
     
     // Standardized default password logic based on role & NIS
     let defaultPassword = userData.password;
@@ -829,7 +1055,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (userData.role === 'siswa' && userNis) {
         defaultPassword = `siswa${userNis}`;
       } else if (userData.role === 'orangtua') {
-        defaultPassword = 'ortu123#Secure';
+        defaultPassword = parentChildNis ? `ortu${parentChildNis}` : 'ortu123#Secure';
       } else if (userData.role === 'walikelas') {
         defaultPassword = 'wali123#Secure';
       } else if (userData.role === 'admin') {
@@ -839,12 +1065,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     
-    // Identifier (Username / NIS / Email / Bebas)
-    const identifier = userData.email?.trim() || (
-      userData.role === 'siswa' && userNis
-        ? userNis
-        : `${userData.role || 'user'}_${Date.now()}`
-    );
+    // Identifier (Username: ortu.[NIS] untuk Orang Tua, NIS untuk Siswa)
+    let identifier = userData.email?.trim();
+    if (!identifier) {
+      if (userData.role === 'siswa' && userNis) {
+        identifier = userNis;
+      } else if (userData.role === 'orangtua' && parentChildNis) {
+        identifier = `ortu.${parentChildNis}`;
+      } else {
+        identifier = `${userData.role || 'user'}_${Date.now()}`;
+      }
+    } else if (userData.role === 'orangtua' && parentChildNis && !identifier.startsWith('ortu.')) {
+      identifier = `ortu.${parentChildNis}`;
+    }
 
     const computedAvatar = userData.avatar && !userData.avatar.includes('api.dicebear.com') && !userData.avatar.includes('images.unsplash.com')
       ? userData.avatar
@@ -856,6 +1089,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: identifier,
       role: userData.role || 'siswa',
       gender: userData.gender,
+      religion: userData.religion ? normalizeReligionName(userData.religion) : (userData.role === 'siswa' ? 'Islam' : undefined),
       nip: userData.nip,
       nis: userNis,
       nisn: userNis,
@@ -913,6 +1147,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteUser = async (userId: string): Promise<void> => {
     markUsersAsDeleted(userId);
     const userToDelete = allUsers.find(u => u.id === userId);
+    if (userToDelete?.email) {
+      markUsersAsDeleted(userToDelete.email);
+      const nis = userToDelete.email.replace(/^ortu[._-]*/i, '').replace(/[^0-9]/g, '');
+      if (nis) {
+        markUsersAsDeleted(`usr-ortu-${nis}`);
+        markUsersAsDeleted(`ortu.${nis}`);
+        markUsersAsDeleted(`ortu${nis}`);
+      }
+    }
     
     let updatedParentsToSync: User[] = [];
     let updatedStudentsToSync: User[] = [];
@@ -968,10 +1211,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        // 3. Update modified student relations in Firestore
+        // 3. Update modified student relations in Firestore (do not merge so parentId is removed)
         if (updatedStudentsToSync.length > 0) {
           for (const student of updatedStudentsToSync) {
-            await setDoc(doc(db, 'users', student.id), cleanForFirestore(student), { merge: true });
+            await setDoc(doc(db, 'users', student.id), cleanForFirestore(student));
           }
         }
 
@@ -1015,6 +1258,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const usersToDelete = allUsers.filter(u => userSet.has(u.id));
     const studentIdsToDelete = new Set(usersToDelete.filter(u => u.role === 'siswa').map(u => u.id));
     const parentIdsToDelete = new Set(usersToDelete.filter(u => u.role === 'orangtua').map(u => u.id));
+
+    // Also mark parent identifiers as deleted to prevent resurrection
+    usersToDelete.forEach(u => {
+      if (u.role === 'orangtua' && u.email) {
+        markUsersAsDeleted(u.email);
+        const nis = u.email.replace(/^ortu[._-]*/i, '').replace(/[^0-9]/g, '');
+        if (nis) {
+          markUsersAsDeleted(`usr-ortu-${nis}`);
+          markUsersAsDeleted(`ortu.${nis}`);
+          markUsersAsDeleted(`ortu${nis}`);
+        }
+      }
+    });
 
     let updatedParentsToSync: User[] = [];
     let updatedStudentsToSync: User[] = [];
@@ -1105,13 +1361,137 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         if (updatedStudentsToSync.length > 0) {
           for (const student of updatedStudentsToSync) {
-            await setDoc(doc(db, 'users', student.id), cleanForFirestore(student), { merge: true });
+            await setDoc(doc(db, 'users', student.id), cleanForFirestore(student));
           }
         }
       } catch (e) {
         console.warn('Firestore bulk delete user and cascade fallback:', e);
       }
     }
+  };
+
+  const syncParentAccounts = async (): Promise<{ createdCount: number; updatedCount: number }> => {
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    const currentUsers = [...allUsers];
+    const students = currentUsers.filter(u => u.role === 'siswa');
+    const parents = currentUsers.filter(u => u.role === 'orangtua');
+    const parentMap = new Map<string, User>();
+    parents.forEach(p => parentMap.set(p.id, { ...p }));
+
+    const updatedStudents: User[] = [];
+    const parentsToSyncToCloud: User[] = [];
+    const studentsToSyncToCloud: User[] = [];
+
+    students.forEach(student => {
+      const studentNis = (student.nis || student.nisn || '').trim();
+      if (!studentNis) {
+        updatedStudents.push(student);
+        return;
+      }
+
+      const expectedEmail = `ortu.${studentNis}`;
+      const expectedPassword = `ortu${studentNis}`;
+
+      let matchedParent = Array.from(parentMap.values()).find(p => 
+        (student.parentId && p.id === student.parentId) || 
+        (p.studentIds && p.studentIds.includes(student.id)) ||
+        p.email?.toLowerCase() === expectedEmail.toLowerCase() ||
+        p.email?.toLowerCase() === `ortu${studentNis}`.toLowerCase() ||
+        p.id === `usr-ortu-${studentNis}`
+      );
+
+      let currentStudent = { ...student };
+
+      if (matchedParent) {
+        let parentUpdated = false;
+        if (matchedParent.email !== expectedEmail) {
+          matchedParent.email = expectedEmail;
+          parentUpdated = true;
+        }
+        if (!matchedParent.password || matchedParent.password.toLowerCase().startsWith('ortu') || matchedParent.password === 'ortu123#Secure' || matchedParent.password === '123456') {
+          if (matchedParent.password !== expectedPassword) {
+            matchedParent.password = expectedPassword;
+            parentUpdated = true;
+          }
+        }
+        if (!matchedParent.studentIds || !matchedParent.studentIds.includes(student.id)) {
+          matchedParent.studentIds = Array.from(new Set([...(matchedParent.studentIds || []), student.id]));
+          parentUpdated = true;
+        }
+        if (currentStudent.parentId !== matchedParent.id) {
+          currentStudent.parentId = matchedParent.id;
+          studentsToSyncToCloud.push(currentStudent);
+          updatedCount++;
+        }
+        if (parentUpdated) {
+          parentMap.set(matchedParent.id, matchedParent);
+          parentsToSyncToCloud.push(matchedParent);
+          updatedCount++;
+        }
+      } else {
+        const newParentId = `usr-ortu-${studentNis}`;
+        const pName = student.parentName ? (student.parentName.includes('(Ortu') ? student.parentName : `${student.parentName} (Ortu ${student.name})`) : `Orang Tua dari ${student.name}`;
+        const newParent: User = {
+          id: newParentId,
+          name: pName,
+          email: expectedEmail,
+          role: 'orangtua',
+          studentIds: [student.id],
+          phone: student.parentPhone || student.phone || '08123456789',
+          avatar: DATA_URI_ORANG_TUA,
+          password: expectedPassword,
+          schoolName: student.schoolName || 'SMP Negeri 2 Kasihan',
+          createdAt: new Date().toISOString()
+        };
+        parentMap.set(newParentId, newParent);
+        currentStudent.parentId = newParentId;
+        parentsToSyncToCloud.push(newParent);
+        studentsToSyncToCloud.push(currentStudent);
+        createdCount++;
+      }
+
+      updatedStudents.push(currentStudent);
+    });
+
+    const uniqueParents = new Map<string, User>();
+    parentMap.forEach(p => {
+      const pKey = p.email?.toLowerCase().trim() || p.id;
+      if (!uniqueParents.has(pKey)) {
+        uniqueParents.set(pKey, p);
+      } else {
+        const existing = uniqueParents.get(pKey)!;
+        existing.studentIds = Array.from(new Set([...(existing.studentIds || []), ...(p.studentIds || [])]));
+      }
+    });
+
+    const nonStudents = currentUsers.filter(u => u.role !== 'siswa' && u.role !== 'orangtua');
+    const finalAllUsers = [...nonStudents, ...updatedStudents, ...Array.from(uniqueParents.values())];
+
+    setAllUsers(finalAllUsers);
+    try {
+      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(finalAllUsers));
+    } catch (e) {
+      console.warn('LocalStorage sync parent warning:', e);
+    }
+
+    if (db) {
+      try {
+        const batch = writeBatch(db);
+        parentsToSyncToCloud.forEach(p => {
+          batch.set(doc(db, 'users', p.id), cleanForFirestore(p), { merge: true });
+        });
+        studentsToSyncToCloud.forEach(s => {
+          batch.set(doc(db, 'users', s.id), cleanForFirestore(s), { merge: true });
+        });
+        await batch.commit();
+      } catch (e) {
+        console.warn('Firestore sync parents warning:', e);
+      }
+    }
+
+    return { createdCount, updatedCount };
   };
 
   const purgeDeletedUsersAndOrphansFromCloud = async (): Promise<{ deletedUsersCount: number; deletedJournalsCount: number }> => {
@@ -1187,11 +1567,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const targetNis = targetUser?.nis || targetUser?.nisn;
     if (targetUser?.role === 'siswa' && targetNis) {
       newPassword = `siswa${targetNis}`;
+      await updateUser(userId, { password: newPassword });
+
+      // Automatically sync linked parent credentials to ortu.[NIS] and ortu[NIS]
+      const linkedParent = allUsers.find(p => p.role === 'orangtua' && (p.id === targetUser.parentId || p.studentIds?.includes(targetUser.id)));
+      if (linkedParent) {
+        await updateUser(linkedParent.id, {
+          email: `ortu.${targetNis}`,
+          password: `ortu${targetNis}`
+        });
+      }
+      return newPassword;
     } else if (targetUser?.role === 'orangtua') {
-      const linked = allUsers.filter(s => targetUser.studentIds?.includes(s.id));
-      const childNis = linked.length > 0 ? (linked[0].nis || linked[0].nisn) : '';
+      const linked = allUsers.filter(s => targetUser.studentIds?.includes(s.id) || s.parentId === targetUser.id);
+      const childNis = linked.length > 0 ? (linked[0].nis || linked[0].nisn) : (targetUser.email?.replace(/^ortu\./, '') || targetUser.nis);
       if (childNis) {
         newPassword = `ortu${childNis}`;
+        await updateUser(userId, { 
+          email: `ortu.${childNis}`,
+          password: newPassword 
+        });
+        return newPassword;
       } else {
         newPassword = 'ortu123#Secure';
       }
@@ -1447,7 +1843,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         importStudentsBulk,
         importTeachersBulk,
         generateNewCredentials,
-        changePassword
+        changePassword,
+        syncParentAccounts
       }}
     >
       {children}

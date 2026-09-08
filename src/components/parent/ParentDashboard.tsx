@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Heart, 
   CheckCircle2, 
@@ -80,9 +80,18 @@ export const ParentDashboard: React.FC = () => {
     setParentActiveTab(tab, true);
   };
 
-  // Find students linked to this parent
+  // Find students linked to this parent (by parentId, studentIds array, or NIS in ortu.[NIS] email/ID)
+  const parentChildNis = (currentUser?.email || '').replace(/^ortu[._-]*/i, '').replace(/[^0-9]/g, '') ||
+                         (currentUser?.id || '').replace(/^usr-ortu-?/i, '').replace(/[^0-9]/g, '');
   const linkedStudents = allUsers.filter(u => 
-    u.role === 'siswa' && (u.parentId === currentUser?.id || currentUser?.studentIds?.includes(u.id))
+    u.role === 'siswa' && (
+      u.parentId === currentUser?.id || 
+      currentUser?.studentIds?.includes(u.id) ||
+      (Boolean(parentChildNis) && (
+        (u.nis && u.nis.trim() === parentChildNis) || 
+        (u.nisn && u.nisn.trim() === parentChildNis)
+      ))
+    )
   );
   
   // Default to first student or first available student if unlinked demo
@@ -90,6 +99,13 @@ export const ParentDashboard: React.FC = () => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
     linkedStudents[0]?.id || fallbackStudent?.id || ''
   );
+
+  // Synchronize selected student whenever linked students update
+  useEffect(() => {
+    if (linkedStudents.length > 0 && (!selectedStudentId || !linkedStudents.some(s => s.id === selectedStudentId))) {
+      setSelectedStudentId(linkedStudents[0].id);
+    }
+  }, [linkedStudents, selectedStudentId]);
 
   const currentStudent = allUsers.find(u => u.id === selectedStudentId) || fallbackStudent;
   const studentEntries = useMemo(() => {

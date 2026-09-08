@@ -60,6 +60,41 @@ import { PDFReportGenerator } from '../../lib/pdfGenerator';
 import { useNavigation, AdminMenuKey } from '../../context/NavigationContext';
 import * as XLSX from 'xlsx';
 
+export const getLinkedChildrenForParent = (parent: User, studentList: User[]): User[] => {
+  const pNis = (parent.email || '').replace(/^ortu[._-]*/i, '').replace(/[^0-9]/g, '') ||
+                (parent.id || '').replace(/^usr-ortu-?/i, '').replace(/[^0-9]/g, '');
+  return studentList.filter(s => 
+    s.role === 'siswa' && (
+      s.parentId === parent.id || 
+      (parent.studentIds && parent.studentIds.includes(s.id)) ||
+      (Boolean(pNis) && (
+        (s.nis && s.nis.trim() === pNis) || 
+        (s.nisn && s.nisn.trim() === pNis)
+      ))
+    )
+  );
+};
+
+export const getLinkedParentForStudent = (student: User, parentList: User[]): User | undefined => {
+  if (student.parentId) {
+    const p = parentList.find(pr => pr.id === student.parentId);
+    if (p) return p;
+  }
+  const pByStudentIds = parentList.find(pr => pr.studentIds?.includes(student.id));
+  if (pByStudentIds) return pByStudentIds;
+
+  const sNis = (student.nis || student.nisn || '').trim();
+  if (sNis) {
+    const pByNis = parentList.find(pr => {
+      const pNis = (pr.email || '').replace(/^ortu[._-]*/i, '').replace(/[^0-9]/g, '') ||
+                    (pr.id || '').replace(/^usr-ortu-?/i, '').replace(/[^0-9]/g, '');
+      return pNis === sNis || pr.id === `usr-ortu-${sNis}`;
+    });
+    if (pByNis) return pByNis;
+  }
+  return undefined;
+};
+
 export const AdminDashboard: React.FC = () => {
   const { 
     allUsers, 
@@ -71,7 +106,8 @@ export const AdminDashboard: React.FC = () => {
     importStudentsBulk, 
     importTeachersBulk,
     generateNewCredentials, 
-    syncAllUsersToCloud 
+    syncAllUsersToCloud,
+    syncParentAccounts
   } = useAuth();
   const { 
     journals, 
@@ -86,6 +122,8 @@ export const AdminDashboard: React.FC = () => {
   const [cloudSyncSuccess, setCloudSyncSuccess] = useState<string | null>(null);
   const [isPurging, setIsPurging] = useState(false);
   const [purgeResult, setPurgeResult] = useState<string | null>(null);
+  const [isSyncingParents, setIsSyncingParents] = useState(false);
+  const [syncParentMsg, setSyncParentMsg] = useState<string | null>(null);
 
   const handleManualCloudSync = async () => {
     setIsCloudSyncing(true);
@@ -105,6 +143,21 @@ export const AdminDashboard: React.FC = () => {
       setTimeout(() => {
         setCloudSyncSuccess(null);
       }, 6000);
+    }
+  };
+
+  const handleSyncParentAccounts = async () => {
+    setIsSyncingParents(true);
+    setSyncParentMsg(null);
+    try {
+      const res = await syncParentAccounts();
+      setSyncParentMsg(`Sinkronisasi akun orang tua selesai! ${res.createdCount} akun baru dibuat, ${res.updatedCount} akun diperbarui & dikaitkan.`);
+      setTimeout(() => setSyncParentMsg(null), 6000);
+    } catch (err) {
+      console.error('Error syncing parents:', err);
+      setSyncParentMsg('Gagal melakukan sinkronisasi akun orang tua.');
+    } finally {
+      setIsSyncingParents(false);
     }
   };
 
@@ -835,16 +888,70 @@ export const AdminDashboard: React.FC = () => {
 
   // Filtered Parents
   const filteredParents = useMemo(() => {
+    const q = parentSearch.toLowerCase().trim();
     return parents.filter(p => {
-      const matchSearch = p.name.toLowerCase().includes(parentSearch.toLowerCase()) ||
-                          p.email.toLowerCase().includes(parentSearch.toLowerCase()) ||
-                          (p.phone && p.phone.includes(parentSearch));
+      const linkedChildren = getLinkedChildrenForParent(p, students);
+      const matchSearch = !q ||
+                          p.name.toLowerCase().includes(q) ||
+                          p.email.toLowerCase().includes(q) ||
+                          (p.phone && p.phone.includes(q)) ||
+                          linkedChildren.some(c => 
+                            c.name.toLowerCase().includes(q) ||
+                            (c.nis && c.nis.toLowerCase().includes(q)) ||
+                            (c.nisn && c.nisn.toLowerCase().includes(q)) ||
+                            (c.className && c.className.toLowerCase().includes(q))
+                          );
       if (!matchSearch) return false;
       if (parentSelectedClass === 'all') return true;
-      const linkedChildren = students.filter(s => s.parentId === p.id || (p.studentIds && p.studentIds.includes(s.id)));
       return linkedChildren.some(c => (normalizeClassName(c.className) || c.className) === parentSelectedClass);
     });
   }, [parents, parentSearch, parentSelectedClass, students]);
+
+  const handleExportParentsExcel = () => {
+    const wsData: any[][] = [
+      ['SMP NEGERI 2 KASIHAN - DAFTAR AKUN ORANG TUA / WALI MURID 7 KAIH'],
+      [`Tanggal Ekspor: ${new Date().toLocaleDateString('id-ID', { dateStyle: 'full' })}`],
+      [`Filter: ${parentSelectedClass === 'all' ? 'Semua Kelas' : 'Kelas ' + parentSelectedClass}`],
+      [],
+      ['No', 'Nama Orang Tua', 'No. WhatsApp / HP', 'Username Ortu', 'Nama Siswa (Anak)', 'Kelas Siswa', 'NIS Siswa', 'Kata Sandi Ortu']
+    ];
+
+    filteredParents.forEach((p, idx) => {
+      const linkedChildren = getLinkedChildrenForParent(p, students);
+      const childNames = linkedChildren.map(c => c.name).join(', ') || '-';
+      const childClasses = linkedChildren.map(c => c.className).join(', ') || '-';
+      const childNis = linkedChildren.map(c => c.nis || c.nisn).filter(Boolean).join(', ') || (p.email?.replace(/^ortu[._-]*/i, '').replace(/[^0-9]/g, '') || '-');
+      const firstChildNis = childNis.split(',')[0].trim();
+      const parentPwd = p.password || (firstChildNis && firstChildNis !== '-' ? `ortu${firstChildNis}` : 'ortu123#Secure');
+
+      wsData.push([
+        idx + 1,
+        p.name,
+        p.phone || '-',
+        p.email,
+        childNames,
+        childClasses,
+        childNis,
+        parentPwd
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 28 },
+      { wch: 18 },
+      { wch: 20 },
+      { wch: 28 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 18 }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Akun_Orang_Tua');
+    XLSX.writeFile(wb, `daftar_akun_orangtua_7kaih_${parentSelectedClass === 'all' ? 'semua_kelas' : 'kelas_' + parentSelectedClass}.xlsx`);
+  };
 
   // Reset student page and selections when filters change
   React.useEffect(() => {
@@ -987,7 +1094,8 @@ export const AdminDashboard: React.FC = () => {
   const handleOpenEditModal = (user: User) => {
     setEditUser(user);
     setAddRole(user.role);
-    const linkedParent = parents.find(p => p.id === user.parentId || (p.studentIds && p.studentIds.includes(user.id)));
+    const linkedParent = getLinkedParentForStudent(user, parents);
+    const linkedChildren = user.role === 'orangtua' ? getLinkedChildrenForParent(user, students) : [];
     const cleanClassName = user.className?.replace(/^Kelas\s+/i, '').replace(/(\d+)-([A-Za-z])/g, '$1$2') || '7A';
     setFormData({
       name: user.name,
@@ -1002,7 +1110,7 @@ export const AdminDashboard: React.FC = () => {
       parentName: linkedParent ? linkedParent.name.replace(/\s*\(Ortu.*\)/i, '') : '',
       parentPhone: linkedParent?.phone || '',
       assignedClass: cleanClassName,
-      linkedStudentId: (user.studentIds && user.studentIds[0]) || '',
+      linkedStudentId: (linkedChildren[0]?.id) || (user.studentIds && user.studentIds[0]) || '',
       customPassword: ''
     });
     setShowAddModal(true);
@@ -1034,6 +1142,10 @@ export const AdminDashboard: React.FC = () => {
       }
       if (editUser.role === 'orangtua' && formData.linkedStudentId) {
         updates.studentIds = [formData.linkedStudentId];
+        const targetStudent = students.find(s => s.id === formData.linkedStudentId);
+        if (targetStudent && targetStudent.parentId !== editUser.id) {
+          await updateUser(targetStudent.id, { parentId: editUser.id });
+        }
       }
       if (formData.customPassword && formData.customPassword.trim()) {
         updates.password = formData.customPassword.trim();
@@ -1041,7 +1153,7 @@ export const AdminDashboard: React.FC = () => {
 
       // If editing student and updated parent details
       if (editUser.role === 'siswa') {
-        const linkedParent = parents.find(p => p.id === editUser.parentId || (p.studentIds && p.studentIds.includes(editUser.id)));
+        const linkedParent = getLinkedParentForStudent(editUser, parents);
         if (linkedParent && (formData.parentName.trim() || formData.parentPhone.trim())) {
           const pName = formData.parentName.trim() || linkedParent.name;
           await updateUser(linkedParent.id, {
@@ -1110,11 +1222,11 @@ export const AdminDashboard: React.FC = () => {
     } else if (addRole === 'orangtua') {
       const customUsername = formData.email?.trim();
       const linkedStudent = students.find(s => s.id === formData.linkedStudentId);
-      const childNisn = linkedStudent?.nisn;
+      const childNis = (linkedStudent?.nis || linkedStudent?.nisn || '').trim();
       const parentIdentifier = customUsername 
         ? customUsername 
-        : (childNisn ? `ortu.${childNisn}` : `ortu_${Date.now()}`);
-      const parentPassword = formData.customPassword?.trim() || (childNisn ? `ortu${childNisn}` : E2EEService.generateSecurePassword(8));
+        : (childNis ? `ortu.${childNis}` : `ortu_${Date.now()}`);
+      const parentPassword = formData.customPassword?.trim() || (childNis ? `ortu${childNis}` : E2EEService.generateSecurePassword(8));
 
       newUser = await addUser({
         name: formData.name.trim(),
@@ -1122,8 +1234,13 @@ export const AdminDashboard: React.FC = () => {
         role: 'orangtua',
         phone: formData.phone || '08139876543',
         studentIds: formData.linkedStudentId ? [formData.linkedStudentId] : [],
-        password: parentPassword
+        password: parentPassword,
+        avatar: DATA_URI_ORANG_TUA
       });
+
+      if (linkedStudent) {
+        await updateUser(linkedStudent.id, { parentId: newUser.id });
+      }
 
       setShowAddModal(false);
       setCredentialModal({ user: newUser, password: parentPassword });
@@ -1745,21 +1862,18 @@ export const AdminDashboard: React.FC = () => {
 
     list.forEach((s, idx) => {
       const linkedParent = parents.find(p => p.id === s.parentId || (p.studentIds && p.studentIds.includes(s.id)));
-      const sPwd = s.password || `siswa${s.nis || s.nisn || '123'}`;
       const sNis = s.nis || s.nisn || s.email;
+      const sPwd = s.password || `siswa${sNis}`;
       const pPwd = linkedParent?.password || `ortu${sNis}`;
-      const pUser = linkedParent ? linkedParent.email : `ortu.${sNis}`;
+      const pUser = linkedParent?.email || `ortu.${sNis}`;
 
       text += `${idx + 1}. *${s.name}* (NIS: ${sNis})\n`;
       text += `   👤 *Login Siswa*:\n`;
       text += `      • Username (NIS): ${sNis}\n`;
       text += `      • Password: ${sPwd}\n`;
-      
-      if (linkedParent) {
-        text += `   👨‍👩‍👧 *Login Orang Tua* (${linkedParent.name}):\n`;
-        text += `      • Username: ${pUser}\n`;
-        text += `      • Password: ${pPwd}\n`;
-      }
+      text += `   👨‍👩‍👧 *Login Orang Tua* (${linkedParent ? linkedParent.name : 'Orang Tua'}):\n`;
+      text += `      • Username: ${pUser}\n`;
+      text += `      • Password: ${pPwd}\n`;
       text += `\n`;
     });
 
@@ -2395,7 +2509,7 @@ export const AdminDashboard: React.FC = () => {
                     </tr>
                   ) : (
                     paginatedStudents.map((s) => {
-                      const linkedParent = parents.find(p => p.id === s.parentId || (p.studentIds && p.studentIds.includes(s.id)));
+                      const linkedParent = getLinkedParentForStudent(s, parents);
                       const isPwdVisible = showPasswordsMap[s.id];
                       const isSelected = selectedStudentIds.includes(s.id);
                       const displayAbsen = s.attendanceNumber || s.noAbsen;
@@ -2621,16 +2735,50 @@ export const AdminDashboard: React.FC = () => {
                 </p>
               </div>
 
-              <button
-                onClick={() => handleOpenAddModal('orangtua')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>Tambah Orang Tua Baru</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleExportParentsExcel}
+                  title="Ekspor seluruh akun orang tua ke berkas Excel spreadsheet"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all cursor-pointer active:scale-95"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Ekspor Excel</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSyncParentAccounts}
+                  disabled={isSyncingParents}
+                  title="Sinkronkan seluruh akun orang tua agar sesuai dengan format: username ortu.[NIS] dan sandi ortu[NIS]"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-bold border border-rose-200 dark:border-rose-800 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingParents ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingParents ? 'Menyinkronkan...' : 'Sinkronkan Akun Ortu'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddModal('orangtua')}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Tambah Orang Tua Baru</span>
+                </button>
+              </div>
             </div>
 
-            {/* Search */}
+            {syncParentMsg && (
+              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-semibold">{syncParentMsg}</span>
+                </div>
+                <button onClick={() => setSyncParentMsg(null)} className="text-emerald-600 hover:text-emerald-800 text-xs font-bold">✕</button>
+              </div>
+            )}
+
+            {/* Search & Filters */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               {/* Dropdown Filter Kelas Orang Tua */}
               <div className="flex items-center gap-2 shrink-0">
@@ -2646,8 +2794,8 @@ export const AdminDashboard: React.FC = () => {
                   <option value="all">Semua Kelas ({parents.length} Orang Tua)</option>
                   {availableClasses.map(cls => {
                     const count = parents.filter(p => {
-                      const linkedChildren = students.filter(s => s.parentId === p.id || (p.studentIds && p.studentIds.includes(s.id)));
-                      return linkedChildren.some(c => c.className === cls);
+                      const linkedChildren = getLinkedChildrenForParent(p, students);
+                      return linkedChildren.some(c => (normalizeClassName(c.className) || c.className) === cls);
                     }).length;
                     return (
                       <option key={cls} value={cls}>
@@ -2732,7 +2880,7 @@ export const AdminDashboard: React.FC = () => {
                     </tr>
                   ) : (
                     paginatedParents.map((p) => {
-                      const linkedChildren = students.filter(s => s.parentId === p.id || (p.studentIds && p.studentIds.includes(s.id)));
+                      const linkedChildren = getLinkedChildrenForParent(p, students);
                       const isPwdVisible = showPasswordsMap[p.id];
                       const isSelected = selectedParentIds.includes(p.id);
 
@@ -2780,25 +2928,32 @@ export const AdminDashboard: React.FC = () => {
                             )}
                           </td>
                           <td className="p-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-mono text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[11px]">
-                                {isPwdVisible ? (p.password || 'ortu123#Secure') : '••••••••'}
-                              </span>
-                              <button
-                                onClick={() => togglePasswordVisibility(p.id)}
-                                title={isPwdVisible ? "Sembunyikan" : "Lihat"}
-                                className="p-1 text-slate-400 hover:text-slate-600"
-                              >
-                                {isPwdVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                              </button>
-                              <button
-                                onClick={() => handleRegeneratePassword(p)}
-                                title="Generate Password Baru"
-                                className="p-1 text-purple-600 hover:bg-purple-50 rounded"
-                              >
-                                <RefreshCw className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                            {(() => {
+                              const linkedChild = linkedChildren.length > 0 ? linkedChildren[0] : null;
+                              const childNis = linkedChild?.nis || linkedChild?.nisn || p.email?.replace(/^ortu[._-]*/i, '').replace(/[^0-9]/g, '');
+                              const displayParentPwd = p.password || (childNis ? `ortu${childNis}` : 'ortu123#Secure');
+                              return (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[11px]">
+                                    {isPwdVisible ? displayParentPwd : '••••••••'}
+                                  </span>
+                                  <button
+                                    onClick={() => togglePasswordVisibility(p.id)}
+                                    title={isPwdVisible ? "Sembunyikan" : "Lihat"}
+                                    className="p-1 text-slate-400 hover:text-slate-600"
+                                  >
+                                    {isPwdVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                  </button>
+                                  <button
+                                    onClick={() => handleRegeneratePassword(p)}
+                                    title="Generate Password Baru"
+                                    className="p-1 text-purple-600 hover:bg-purple-50 rounded"
+                                  >
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="p-3 text-center">
                             <div className="inline-flex items-center gap-1">
@@ -3888,18 +4043,20 @@ export const AdminDashboard: React.FC = () => {
             {credentialViewMode === 'family' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
                 {students
-                  .filter(s => credentialFilterClass === 'all' || s.className === credentialFilterClass)
+                  .filter(s => credentialFilterClass === 'all' || (normalizeClassName(s.className) || s.className) === credentialFilterClass)
                   .map((s) => {
-                    const linkedParent = parents.find(p => p.id === s.parentId || (p.studentIds && p.studentIds.includes(s.id)));
+                    const linkedParent = getLinkedParentForStudent(s, parents);
                     const isStudentPwdVisible = showPasswordsMap[s.id];
                     const isParentPwdVisible = linkedParent ? showPasswordsMap[linkedParent.id] : false;
-                    const sPwd = s.password || `siswa${s.nisn || '123'}`;
-                    const pPwd = linkedParent?.password || (s.nisn ? `ortu${s.nisn}` : 'ortu123#');
+                    const sNis = (s.nis || s.nisn || s.email || '').trim();
+                    const sPwd = s.password || `siswa${sNis}`;
+                    const pPwd = linkedParent?.password || `ortu${sNis}`;
+                    const pUser = linkedParent?.email || `ortu.${sNis}`;
 
                     const familyShareText = `KREDENSIAL LOGIN JURNAL 7 KAIH SMP NEGERI 2 KASIHAN\n` +
                       `Siswa: ${s.name} (${s.className || '7A'})\n` +
-                      `• Login Siswa: ${s.nisn || s.email} | Sandi: ${sPwd}\n` +
-                      (linkedParent ? `• Login Ortu (${linkedParent.name}): ortu.${s.nisn || s.id} | Sandi: ${pPwd}\n` : '');
+                      `• Login Siswa: ${sNis} | Sandi: ${sPwd}\n` +
+                      `• Login Ortu (${linkedParent ? linkedParent.name : 'Orang Tua'}): ${pUser} | Sandi: ${pPwd}\n`;
 
                     return (
                       <div
@@ -3983,7 +4140,7 @@ export const AdminDashboard: React.FC = () => {
                                 <div className="flex justify-between">
                                   <span className="text-slate-500 dark:text-slate-400">Username:</span>
                                   <strong className="text-slate-800 dark:text-slate-200 truncate max-w-[120px]">
-                                    {linkedParent.email}
+                                    {pUser}
                                   </strong>
                                 </div>
                                 <div className="flex justify-between">
@@ -3994,7 +4151,20 @@ export const AdminDashboard: React.FC = () => {
                                 </div>
                               </div>
                             ) : (
-                              <p className="text-[10px] text-slate-400 italic py-2">Belum ada akun orang tua.</p>
+                              <div className="space-y-1 text-[11px] font-mono">
+                                <div className="flex justify-between">
+                                  <span className="text-slate-500 dark:text-slate-400">Username:</span>
+                                  <strong className="text-slate-800 dark:text-slate-200 truncate max-w-[120px]">
+                                    ortu.{sNis}
+                                  </strong>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-slate-500 dark:text-slate-400">Password:</span>
+                                  <strong className="text-rose-600 dark:text-rose-400">
+                                    {isParentPwdVisible ? `ortu${sNis}` : '••••••••'}
+                                  </strong>
+                                </div>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -4007,8 +4177,19 @@ export const AdminDashboard: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
                 {batchCredentialUsers.map((u) => {
                   const isPwdVisible = showPasswordsMap[u.id];
-                  const cardPwd = u.password || (u.role === 'siswa' ? `siswa${u.nis || u.nisn || '123'}` : 'ortu123#');
-                  const shareText = `Kredensial Login Jurnal 7 KAIH SMP Negeri 2 Kasihan\nNama: ${u.name}\nUsername: ${u.nis || u.nisn || u.email}\nPassword: ${cardPwd}\nPeran: ${u.role.toUpperCase()}`;
+                  let cardPwd = u.password;
+                  let cardUsername = u.nis || u.nisn || u.email;
+                  if (u.role === 'siswa') {
+                    const sNis = u.nis || u.nisn || '123';
+                    cardPwd = u.password || `siswa${sNis}`;
+                    cardUsername = sNis;
+                  } else if (u.role === 'orangtua') {
+                    const linked = students.find(s => u.studentIds?.includes(s.id) || s.parentId === u.id);
+                    const cNis = linked?.nis || linked?.nisn || u.email?.replace(/^ortu\./, '');
+                    cardPwd = u.password || (cNis ? `ortu${cNis}` : 'ortu123#Secure');
+                    cardUsername = u.email?.startsWith('ortu.') ? u.email : (cNis ? `ortu.${cNis}` : u.email);
+                  }
+                  const shareText = `Kredensial Login Jurnal 7 KAIH SMP Negeri 2 Kasihan\nNama: ${u.name}\nUsername: ${cardUsername}\nPassword: ${cardPwd}\nPeran: ${u.role.toUpperCase()}`;
 
                   return (
                     <div key={u.id} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 space-y-2 relative">
