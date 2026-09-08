@@ -29,7 +29,7 @@ import { useJournal } from '../../context/JournalContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
 import { JournalEntry, HabitId, User } from '../../types';
-import { HABIT_DEFINITIONS } from '../../lib/constants';
+import { HABIT_DEFINITIONS, getWorshipStatusList, isJournalParentValidated, formatDateDDMMYY } from '../../lib/constants';
 import { PDFReportGenerator } from '../../lib/pdfGenerator';
 import { UserAvatar } from '../common/UserAvatar';
 import * as XLSX from 'xlsx';
@@ -43,6 +43,96 @@ const HABIT_KEYS: HabitId[] = [
   'bermasyarakat',
   'istirahat'
 ];
+
+const renderHabitValuesRekap = (habitKey: HabitId, values: any) => {
+  if (!values) return null;
+  switch (habitKey) {
+    case 'bangun_pagi':
+      return (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-700 dark:text-slate-300">
+          <span>⏰ Jam: <strong>{values.wakeTime || values.wake_time || '04:45'}</strong> WIB</span>
+          {values.bedMade && <span className="text-emerald-600 font-semibold">• ✓ Rapi Tempat Tidur</span>}
+          {values.drinkWater && <span className="text-emerald-600 font-semibold">• ✓ Minum Air Putih/Hangat</span>}
+          {values.morningMood && <span className="text-amber-600 font-semibold">• Suasana: {values.morningMood}</span>}
+        </div>
+      );
+    case 'ibadah': {
+      const worshipItems = getWorshipStatusList(values.religion, values);
+      return (
+        <div className="space-y-1 text-[11px] text-slate-700 dark:text-slate-300">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-bold text-slate-800 dark:text-slate-200">🕌 Ibadah:</span>
+            {worshipItems.map(p => (
+              <span 
+                key={p.key}
+                title={`${p.label}: ${p.isExecuted ? 'Dilaksanakan' : 'Tidak Dilaksanakan'}`}
+                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                  p.isExecuted 
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+                    : 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200 dark:border-rose-900'
+                }`}
+              >
+                <span>{p.shortLabel}:</span>
+                <span>{p.isExecuted ? '✓' : '✗'}</span>
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 pt-0.5">
+            {values.holyBookDetail && <span>📖 Kitab: <strong>{values.holyBookDetail}</strong></span>}
+            {values.sunnahDetail && <span>✨ Sunnah: <strong>{values.sunnahDetail}</strong></span>}
+            {values.almsDetail && <span>🤲 Infaq: <strong>{values.almsDetail}</strong></span>}
+            {values.spiritualNote && <span className="italic">💭 "{values.spiritualNote}"</span>}
+          </div>
+        </div>
+      );
+    }
+    case 'olahraga':
+      return (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-700 dark:text-slate-300">
+          <span>🏃 Olahraga: <strong className="text-rose-600 dark:text-rose-400">{values.exerciseType || values.exercise_type || 'Senam'}</strong></span>
+          <span>• ⏱️ <strong>{values.durationMin || values.duration || 20} Menit</strong></span>
+          {values.bodyCondition && <span>• Kondisi: <strong>{values.bodyCondition}</strong></span>}
+        </div>
+      );
+    case 'makan_sehat':
+      return (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-700 dark:text-slate-300">
+          <span>🥗 Sarapan: <strong>{values.breakfastCustom || values.breakfastMenu || (values.breakfastEaten ? 'Sarapan Sehat' : 'Bergizi')}</strong></span>
+          {values.lunchCustom && <span>• Siang: <strong>{values.lunchCustom}</strong></span>}
+          {values.dinnerCustom && <span>• Malam: <strong>{values.dinnerCustom}</strong></span>}
+          {values.hasVegetables && <span className="text-emerald-600">• Sayur ✓</span>}
+          {values.hasFruits && <span className="text-emerald-600">• Buah ✓</span>}
+          {(values.waterGlasses || values.water_glasses) && <span>• 💧 {values.waterGlasses || values.water_glasses} Gelas</span>}
+        </div>
+      );
+    case 'membaca':
+      return (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-700 dark:text-slate-300">
+          <span>📖 Judul: <strong>{values.bookTitle || values.book_title || 'Literasi'}</strong></span>
+          {(values.pagesRead || values.pages_read) && <span>• <strong>{values.pagesRead || values.pages_read} Halaman</strong></span>}
+          {values.readingDuration && <span>• <strong>{values.readingDuration} Menit</strong></span>}
+          {values.bookGenre && <span>• Genre: {values.bookGenre}</span>}
+          {values.bookSummary && <p className="w-full italic text-[10px] text-slate-500 mt-1">"{values.bookSummary}"</p>}
+        </div>
+      );
+    case 'bermasyarakat':
+      return (
+        <div className="text-[11px] text-slate-700 dark:text-slate-300">
+          <span>🤝 Kegiatan: <strong>{values.socialActivityCustom || (Array.isArray(values.socialActivities) && values.socialActivities.length > 0 ? values.socialActivities.join(', ') : '') || (values.helpParents ? 'Membantu Orang Tua' : '') || values.activity_type || 'Bermasyarakat'}</strong></span>
+        </div>
+      );
+    case 'istirahat':
+      return (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-700 dark:text-slate-300">
+          <span>🌙 Tidur Pkl <strong>{values.sleepTime || values.sleep_time || '21:00'}</strong> WIB</span>
+          {values.readBeforeBed && <span className="text-emerald-600">• ✓ Baca Sebelum Tidur</span>}
+          {values.noGadget && <span className="text-emerald-600">• ✓ Bebas HP</span>}
+        </div>
+      );
+    default:
+      return null;
+  }
+};
 
 export const AdminJournalMonitoring: React.FC = () => {
   const { journals, deleteJournal, deleteJournalsBulk, clearAllJournals } = useJournal();
@@ -288,9 +378,10 @@ export const AdminJournalMonitoring: React.FC = () => {
     const studentTeacher = PDFReportGenerator.getTeacherForClass(studentClass, allUsers);
 
     const sJournals = journals.filter(j => j.studentId === journal.studentId);
+    const validatedJournals = sJournals.filter(isJournalParentValidated);
     PDFReportGenerator.generateStudentReport(
       studentUser,
-      sJournals,
+      validatedJournals,
       journal.date.substring(0, 7),
       undefined,
       schoolSettings,
@@ -657,7 +748,7 @@ export const AdminJournalMonitoring: React.FC = () => {
                       {/* Date */}
                       <td className="p-3">
                         <div className="font-mono text-slate-800 dark:text-slate-200 font-semibold text-[11px]">
-                          {journal.date}
+                          {formatDateDDMMYY(journal.date)}
                         </div>
                         <span className="text-[10px] text-slate-400">
                           {journal.date === todayStr ? 'Hari Ini' : 'Arsip'}
@@ -866,16 +957,39 @@ export const AdminJournalMonitoring: React.FC = () => {
                     <span>Detail Jurnal Harian 7 KAIH</span>
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {activeJournalDetail.studentName} ({activeJournalDetail.className}) • Tanggal: <strong>{activeJournalDetail.date}</strong>
+                    {activeJournalDetail.studentName} ({activeJournalDetail.className}) • Tanggal: <strong>{formatDateDDMMYY(activeJournalDetail.date)}</strong>
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setActiveJournalDetail(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const studentObj = allUsers.find(u => u.id === activeJournalDetail.studentId) || {
+                      id: activeJournalDetail.studentId,
+                      name: activeJournalDetail.studentName,
+                      role: 'siswa' as const,
+                      className: activeJournalDetail.className,
+                      nis: activeJournalDetail.studentNis || activeJournalDetail.studentNisn || ''
+                    };
+                    PDFReportGenerator.generateStudentDetailedReport(
+                      studentObj,
+                      [activeJournalDetail],
+                      activeJournalDetail.date
+                    );
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-semibold flex items-center gap-1 border border-indigo-200 dark:border-indigo-800 cursor-pointer"
+                  title="Cetak PDF Detail 7KAIH"
+                >
+                  <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                  <span className="hidden sm:inline">Cetak PDF</span>
+                </button>
+                <button
+                  onClick={() => setActiveJournalDetail(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Content */}
@@ -900,7 +1014,7 @@ export const AdminJournalMonitoring: React.FC = () => {
 
               {/* 7 Habits Detail Breakdown */}
               <div className="space-y-2">
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs">Rincian 7 Kebiasaan:</h4>
+                <h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs">Rincian Rekap Data 7 Kebiasaan:</h4>
                 <div className="space-y-2">
                   {HABIT_KEYS.map((k) => {
                     const item = activeJournalDetail.habits?.[k];
@@ -932,17 +1046,10 @@ export const AdminJournalMonitoring: React.FC = () => {
                           </span>
                         </div>
 
-                        {/* Values breakdown if done */}
+                        {/* Rekap data yang telah dipilih atau diisikan siswa */}
                         {isDone && item?.values && Object.keys(item.values).length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-800 flex flex-wrap gap-1.5">
-                            {Object.entries(item.values).map(([vKey, vVal]) => {
-                              if (vVal === undefined || vVal === null || vVal === '') return null;
-                              return (
-                                <span key={vKey} className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] text-slate-700 dark:text-slate-300">
-                                  <strong>{vKey}:</strong> {typeof vVal === 'boolean' ? (vVal ? 'Ya' : 'Tidak') : String(vVal)}
-                                </span>
-                              );
-                            })}
+                          <div className="mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+                            {renderHabitValuesRekap(k, item.values)}
                           </div>
                         )}
                       </div>

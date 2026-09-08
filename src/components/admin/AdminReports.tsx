@@ -33,9 +33,20 @@ import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
 import { PDFReportGenerator } from '../../lib/pdfGenerator';
-import { HABIT_LIST, KATEGORI_CONFIG } from '../../lib/constants';
+import { 
+  HABIT_LIST, 
+  KATEGORI_CONFIG, 
+  getWorshipStatusList, 
+  formatWorshipDetailedStatus, 
+  getDaysInMonth, 
+  getCurrentRunningMonthStr,
+  isDateInMonth,
+  isJournalParentValidated,
+  formatDateDDMMYY 
+} from '../../lib/constants';
 import { User, HabitKategoriLevel, JournalEntry } from '../../types';
 import { audioNotifier } from '../../lib/audioNotifier';
+import { Detail7KAIHModal } from '../common/Detail7KAIHModal';
 
 interface AdminReportsProps {
   onSelectStudent?: (student: User) => void;
@@ -62,7 +73,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
   const { schoolSettings } = useSchoolSettings();
 
   const [activeTab, setActiveTab] = useState<'individual' | 'collective' | 'detail'>('individual');
-  const [selectedMonth, setSelectedMonth] = useState<string>('Agustus 2026');
+  const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentRunningMonthStr());
   
   // Individual & Detail Report States
   const [selectedClassForIndiv, setSelectedClassForIndiv] = useState<string>('all');
@@ -70,6 +81,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [customTeacherNote, setCustomTeacherNote] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedJournalForDetail, setSelectedJournalForDetail] = useState<JournalEntry | null>(null);
 
   // Collective Report States
   const [selectedClassForCollect, setSelectedClassForCollect] = useState<string>('7A');
@@ -114,35 +126,50 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
 
   const selectedStudentJournals = useMemo(() => {
     if (!selectedStudent) return [];
-    return getStudentJournals(selectedStudent.id);
-  }, [selectedStudent, getStudentJournals, journals]);
+    return getStudentJournals(selectedStudent.id).filter(j => isDateInMonth(j.date, selectedMonth));
+  }, [selectedStudent, getStudentJournals, journals, selectedMonth]);
+
+  // Sesuai aturan: isian jurnal yang belum diverifikasi dan divalidasi oleh orang tua tidak masuk dalam rekapitulasi laporan
+  const selectedStudentValidatedJournals = useMemo(() => {
+    return selectedStudentJournals.filter(isJournalParentValidated);
+  }, [selectedStudentJournals]);
 
   const selectedStudentStats = useMemo(() => {
-    const totalDays = selectedStudentJournals.length;
-    const avgScore = totalDays > 0 
-      ? Math.round(selectedStudentJournals.reduce((acc, curr) => acc + curr.overallScore, 0) / totalDays)
+    const totalValidated = selectedStudentValidatedJournals.length;
+    const totalRaw = selectedStudentJournals.length;
+    const pendingCount = totalRaw - totalValidated;
+    const avgScore = totalValidated > 0 
+      ? Math.round(selectedStudentValidatedJournals.reduce((acc, curr) => acc + curr.overallScore, 0) / totalValidated)
       : 0;
 
     let kategori: HabitKategoriLevel = 'belum_terbiasa';
     if (avgScore >= 80) kategori = 'sudah_terbiasa';
     else if (avgScore >= 50) kategori = 'mulai_terbiasa';
 
-    const validatedCount = selectedStudentJournals.filter(j => j.status === 'validated' || j.parentValidation?.status === 'valid' || j.parentValidation?.validated).length;
-    const validationRate = totalDays > 0 ? Math.round((validatedCount / totalDays) * 100) : 0;
+    const validationRate = totalRaw > 0 ? Math.round((totalValidated / totalRaw) * 100) : 0;
 
-    return { totalDays, avgScore, kategori, validatedCount, validationRate };
-  }, [selectedStudentJournals]);
+    return { 
+      totalDays: totalValidated, 
+      totalRaw, 
+      pendingCount, 
+      avgScore, 
+      kategori, 
+      validatedCount: totalValidated, 
+      validationRate 
+    };
+  }, [selectedStudentValidatedJournals, selectedStudentJournals]);
 
   // Export Individual Student Summary PDF
   const handlePrintIndividualPDF = (targetStudent: User) => {
-    const sJournals = getStudentJournals(targetStudent.id);
+    const sJournals = getStudentJournals(targetStudent.id).filter(j => isDateInMonth(j.date, selectedMonth));
+    const validatedJournals = sJournals.filter(isJournalParentValidated);
     const studentTeacher = PDFReportGenerator.getTeacherForClass(targetStudent.className, allUsers);
 
     setIsExporting(true);
     try {
       PDFReportGenerator.generateStudentReport(
         targetStudent,
-        sJournals,
+        validatedJournals,
         selectedMonth,
         customTeacherNote || undefined,
         schoolSettings,
@@ -157,16 +184,16 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
     }
   };
 
-  // Export Detailed Implementation PDF for a Student (Log Harian / Matriks 7KAIH)
+  // Export Detailed Implementation PDF for a Student (Log Harian / Matriks 7KAIH 100% Lengkap)
   const handlePrintDetailedStudentPDF = (targetStudent: User) => {
-    const sJournals = getStudentJournals(targetStudent.id);
+    const sJournals = getStudentJournals(targetStudent.id).filter(j => isDateInMonth(j.date, selectedMonth));
     const studentTeacher = PDFReportGenerator.getTeacherForClass(targetStudent.className, allUsers);
 
     setIsExporting(true);
     try {
       PDFReportGenerator.generateStudentDetailedReport(
         targetStudent,
-        sJournals,
+        sJournals, // 100% data yang diisikan siswa dicetak lengkap di laporan detail
         selectedMonth,
         customTeacherNote || undefined,
         schoolSettings,
@@ -189,7 +216,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
       return;
     }
 
-    if (!window.confirm(`Cetak Detail Pelaksanaan 7KAIH untuk seluruh ${targetStudents.length} siswa kelas ${targetClass}?`)) {
+    if (!window.confirm(`Cetak Detail Pelaksanaan 7KAIH untuk seluruh ${targetStudents.length} siswa kelas ${targetClass}? (Hanya data tervalidasi ortu yang dicetak)`)) {
       return;
     }
 
@@ -204,28 +231,67 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
     });
   };
 
-  // Export Excel Log Harian Siswa
+  // Export Excel Log Harian Siswa (Hanya data yang telah divalidasi ortu)
   const handleExportStudentExcel = (targetStudent: User) => {
-    const sJournals = getStudentJournals(targetStudent.id);
+    const sJournals = getStudentJournals(targetStudent.id).filter(isJournalParentValidated);
     if (sJournals.length === 0) {
-      alert('Belum ada data jurnal untuk siswa ini.');
+      alert('Belum ada data jurnal yang telah divalidasi oleh orang tua untuk siswa ini.');
       return;
     }
 
     const rows = sJournals.map((j, idx) => {
+      const bp = j.habits?.bangun_pagi;
+      const bpTime = bp?.values?.wakeTime || bp?.values?.wake_time || bp?.time || '04:45';
+      const bpAddons = [bp?.values?.bedMade ? 'Rapi Kasur' : '', bp?.values?.drinkWater ? 'Minum Air' : ''].filter(Boolean).join(', ');
+
+      const ib = j.habits?.ibadah;
+      const ibWorshipDetail = ib?.values ? formatWorshipDetailedStatus(targetStudent.religion, ib.values) : '';
+      const ibAddons: string[] = [];
+      if (ib?.values?.holyBookDetail) ibAddons.push(`Kitab: ${ib.values.holyBookDetail}`);
+      else if (ib?.values?.holyBookReading) ibAddons.push('Baca Kitab: Ya');
+      if (ib?.values?.sunnahDetail) ibAddons.push(`Sunnah: ${ib.values.sunnahDetail}`);
+      if (ib?.values?.almsDetail) ibAddons.push(`Infaq: ${ib.values.almsDetail}`);
+      const ibFullText = ib?.completed 
+        ? `Terlaksana [${ibWorshipDetail}${ibAddons.length > 0 ? ` | ${ibAddons.join(', ')}` : ''}]`
+        : `Belum Terlaksana [${ibWorshipDetail || '-'}]`;
+
+      const ol = j.habits?.olahraga;
+      const olType = ol?.values?.exerciseType || ol?.values?.exercise_type || 'Olahraga';
+      const olDur = ol?.values?.durationMin || ol?.values?.duration || 20;
+      const olCond = ol?.values?.bodyCondition ? ` (${ol.values.bodyCondition})` : '';
+
+      const ms = j.habits?.makan_sehat;
+      const meals = [
+        ms?.values?.breakfastCustom || ms?.values?.breakfastMenu || (ms?.values?.breakfastEaten ? 'Sarapan' : ''),
+        ms?.values?.lunchCustom || ms?.values?.lunchMenu || (ms?.values?.lunchEaten ? 'Makan Siang' : ''),
+        ms?.values?.dinnerCustom || ms?.values?.dinnerMenu || (ms?.values?.dinnerEaten ? 'Makan Malam' : '')
+      ].filter(Boolean).join(', ');
+      const water = ms?.values?.waterGlasses || ms?.values?.water_glasses ? ` (${ms?.values?.waterGlasses || ms?.values?.water_glasses} gls)` : '';
+
+      const mb = j.habits?.membaca;
+      const mbTitle = mb?.values?.bookTitle || mb?.values?.book_title || 'Literasi';
+      const mbPages = mb?.values?.pagesRead || mb?.values?.pages_read ? ` (${mb?.values?.pagesRead || mb?.values?.pages_read} hlm)` : '';
+
+      const bm = j.habits?.bermasyarakat;
+      const bmAct = bm?.values?.socialActivityCustom || (Array.isArray(bm?.values?.socialActivities) && bm.values.socialActivities.length > 0 ? bm.values.socialActivities.join(', ') : '') || (bm?.values?.helpParents ? 'Bantu Ortu' : '') || bm?.values?.activity_type || bm?.values?.social_action || 'Bermasyarakat';
+
+      const ist = j.habits?.istirahat;
+      const istTime = ist?.values?.sleepTime || ist?.values?.sleep_time || '21:00';
+      const istExtra = [ist?.values?.readBeforeBed ? 'Baca' : '', ist?.values?.noGadget ? 'Bebas HP' : ''].filter(Boolean).join(', ');
+
       return {
         'No': idx + 1,
         'Tanggal': j.date,
         'NIS': targetStudent.nis || targetStudent.nisn || '',
         'Nama Siswa': targetStudent.name,
         'Kelas': targetStudent.className || '',
-        '1. Bangun Pagi': j.habits?.bangun_pagi?.completed ? `Ya (Pkl ${j.habits.bangun_pagi.values?.wake_time || '04:30'})` : 'Belum',
-        '2. Beribadah': j.habits?.ibadah?.completed ? 'Ya' : 'Belum',
-        '3. Berolahraga': j.habits?.olahraga?.completed ? `${j.habits.olahraga.values?.exercise_type || 'Senam'} (${j.habits.olahraga.values?.duration || 20}m)` : '-',
-        '4. Makan Sehat': j.habits?.makan_sehat?.completed ? 'Ya (Bergizi)' : '-',
-        '5. Gemar Membaca': j.habits?.membaca?.completed ? `${j.habits.membaca.values?.book_title || 'Literasi'} (${j.habits.membaca.values?.pages_read || 0} hlm)` : '-',
-        '6. Bermasyarakat': j.habits?.bermasyarakat?.completed ? (j.habits.bermasyarakat.values?.activity_type || 'Bantu Ortu') : '-',
-        '7. Tidur Cepat': j.habits?.istirahat?.completed ? `Ya (Pkl ${j.habits.istirahat.values?.sleep_time || '21:00'})` : 'Belum',
+        '1. Bangun Pagi': bp?.completed ? `Ya (Pkl ${bpTime}${bpAddons ? `, ${bpAddons}` : ''})` : 'Belum',
+        '2. Beribadah': ibFullText,
+        '3. Berolahraga': ol?.completed ? `${olType} (${olDur}m)${olCond}` : '-',
+        '4. Makan Sehat': ms?.completed ? `${meals || 'Bergizi'}${water}` : '-',
+        '5. Gemar Membaca': mb?.completed ? `${mbTitle}${mbPages}` : '-',
+        '6. Bermasyarakat': bm?.completed ? bmAct : '-',
+        '7. Tidur Cepat': ist?.completed ? `Ya (Pkl ${istTime}${istExtra ? `, ${istExtra}` : ''})` : 'Belum',
         'Skor (%)': j.overallScore,
         'Validasi Ortu': j.parentValidation?.status === 'valid' || j.parentValidation?.validated ? 'Disetujui / Valid' : 'Belum',
         'Catatan Siswa / Refleksi': j.decryptedReflection || ''
@@ -260,51 +326,57 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
 
   const classStudentRows = useMemo(() => {
     return classStudents.map(student => {
-      const sJournals = getStudentJournals(student.id);
-      const totalCount = sJournals.length;
+      const sJournals = getStudentJournals(student.id).filter(j => isDateInMonth(j.date, selectedMonth));
+      // Sesuai aturan: isian jurnal yang belum diverifikasi dan divalidasi oleh orang tua tidak masuk dalam rekapitulasi laporan
+      const validatedJournals = sJournals.filter(isJournalParentValidated);
+      const totalCount = validatedJournals.length;
+      const totalRaw = sJournals.length;
       const avgScore = totalCount > 0 
-        ? Math.round(sJournals.reduce((a, b) => a + b.overallScore, 0) / totalCount)
+        ? Math.round(validatedJournals.reduce((a, b) => a + b.overallScore, 0) / totalCount)
         : 0;
 
       let level: HabitKategoriLevel = 'belum_terbiasa';
       if (avgScore >= 80) level = 'sudah_terbiasa';
       else if (avgScore >= 50) level = 'mulai_terbiasa';
 
-      const validatedCount = sJournals.filter(j => j.status === 'validated' || j.parentValidation?.status === 'valid' || j.parentValidation?.validated).length;
-      const validationRate = totalCount > 0 ? Math.round((validatedCount / totalCount) * 100) : 0;
+      const validationRate = totalRaw > 0 ? Math.round((totalCount / totalRaw) * 100) : 0;
 
       return {
         student,
         score: avgScore,
         level,
         entriesCount: totalCount,
+        totalRaw,
+        pendingCount: totalRaw - totalCount,
         validationRate
       };
     });
-  }, [classStudents, getStudentJournals, journals]);
+  }, [classStudents, getStudentJournals, journals, selectedMonth]);
 
   // Export Collective Class PDF
   const handlePrintCollectiveClassPDF = (targetClass: string) => {
     const targetStudents = students.filter(s => s.className === targetClass);
     const targetStudentIds = targetStudents.map(s => s.id);
-    const targetAnalysis = getClassAnalysis(targetClass, targetStudentIds);
+    const targetAnalysis = getClassAnalysis(targetClass, targetStudentIds, true);
     const targetTeacherObj = PDFReportGenerator.getTeacherForClass(targetClass, allUsers);
     const targetTeacher = targetTeacherObj?.name || `Wali Kelas ${targetClass}`;
     const targetTeacherNip = targetTeacherObj?.nip;
 
     const targetRows = targetStudents.map(student => {
-      const sJournals = getStudentJournals(student.id);
-      const totalCount = sJournals.length;
+      const sJournals = getStudentJournals(student.id).filter(j => isDateInMonth(j.date, selectedMonth));
+      // Sesuai aturan: hanya jurnal tervalidasi yang masuk rekapitulasi kelas
+      const validatedJournals = sJournals.filter(isJournalParentValidated);
+      const totalCount = validatedJournals.length;
+      const totalRaw = sJournals.length;
       const avgScore = totalCount > 0 
-        ? Math.round(sJournals.reduce((a, b) => a + b.overallScore, 0) / totalCount)
+        ? Math.round(validatedJournals.reduce((a, b) => a + b.overallScore, 0) / totalCount)
         : 0;
 
       let level: HabitKategoriLevel = 'belum_terbiasa';
       if (avgScore >= 80) level = 'sudah_terbiasa';
       else if (avgScore >= 50) level = 'mulai_terbiasa';
 
-      const validatedCount = sJournals.filter(j => j.status === 'validated' || j.parentValidation?.status === 'valid' || j.parentValidation?.validated).length;
-      const validationRate = totalCount > 0 ? Math.round((validatedCount / totalCount) * 100) : 0;
+      const validationRate = totalRaw > 0 ? Math.round((totalCount / totalRaw) * 100) : 0;
 
       return {
         student,
@@ -576,9 +648,9 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
                 {/* Stat Badges */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-center">
-                    <p className="text-[10px] text-slate-500 font-bold uppercase">Jurnal Terisi</p>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase">Keterisian Tervalidasi</p>
                     <p className="text-base font-bold text-slate-900 dark:text-white mt-0.5">
-                      {selectedStudentStats.totalDays} Hari
+                      {selectedStudentStats.totalDays} / {getDaysInMonth(selectedMonth)} Hari
                     </p>
                   </div>
 
@@ -610,23 +682,29 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
 
                 {/* 7 Habits Breakdown */}
                 <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                    Rekapitulasi Pelaksanaan 7 Pilar Kebiasaan ({selectedMonth}):
-                  </h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                      Rekapitulasi Pelaksanaan 7 Pilar Kebiasaan ({selectedMonth}):
+                    </h4>
+                    <span className="text-[10px] text-slate-400 italic">
+                      * Hanya mencakup isian tervalidasi orang tua
+                    </span>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                     {HABIT_LIST.map(h => {
-                      const completedCount = selectedStudentJournals.filter(
+                      const completedCount = selectedStudentValidatedJournals.filter(
                         j => j.habits[h.id]?.completed
                       ).length;
-                      const rate = selectedStudentStats.totalDays > 0 
-                        ? Math.round((completedCount / selectedStudentStats.totalDays) * 100) 
+                      const daysInMonth = getDaysInMonth(selectedMonth);
+                      const rate = daysInMonth > 0 
+                        ? Math.round((completedCount / daysInMonth) * 100) 
                         : 0;
 
                       return (
                         <div key={h.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
                           <span className="font-semibold text-slate-800 dark:text-slate-200">{h.shortName}</span>
                           <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-slate-500">{completedCount}/{selectedStudentStats.totalDays} hr</span>
+                            <span className="text-[11px] text-slate-500">{completedCount}/{daysInMonth} hr</span>
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                               rate >= 80 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' :
                               rate >= 50 ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' :
@@ -764,10 +842,15 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
 
           {/* Classroom Table of Students */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                Daftar Murid {selectedClassForCollect} ({classStudentRows.length} Siswa):
-              </h4>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                  Daftar Murid {selectedClassForCollect} ({classStudentRows.length} Siswa):
+                </h4>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 italic">
+                  * Kebijakan: Rekapitulasi laporan hanya menghitung jurnal yang telah diverifikasi & divalidasi oleh orang tua.
+                </p>
+              </div>
               <span className="text-[11px] text-slate-400">
                 Format resmi otomatis sesuai standar lembar arsip sekolah
               </span>
@@ -781,7 +864,12 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
                     <th className="p-3">NIS</th>
                     <th className="p-3 text-center">No Absen</th>
                     <th className="p-3">Nama Siswa</th>
-                    <th className="p-3 text-center">Jurnal</th>
+                    <th className="p-3 text-center">
+                      <div>Keterisian Tervalidasi</div>
+                      <div className="text-[8px] font-normal normal-case text-slate-400 dark:text-slate-500">
+                        (Hari Valid / Bulan Berjalan)
+                      </div>
+                    </th>
                     <th className="p-3 text-center">Skor Rerata</th>
                     <th className="p-3 text-center">Kategori KAIH</th>
                     <th className="p-3 text-center">Validasi Ortu</th>
@@ -802,7 +890,18 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
                         <td className="p-3 font-mono text-slate-600 dark:text-slate-300">{row.student.nis || row.student.nisn || '-'}</td>
                         <td className="p-3 text-center font-mono text-indigo-600 dark:text-indigo-400 font-bold">{row.student.attendanceNumber || row.student.noAbsen || '-'}</td>
                         <td className="p-3 font-bold text-slate-900 dark:text-white">{row.student.name}</td>
-                        <td className="p-3 text-center">{row.entriesCount} Hari</td>
+                        <td className="p-3 text-center">
+                          <div className="inline-flex flex-col items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              {row.entriesCount} / {getDaysInMonth(selectedMonth)} Hari
+                            </span>
+                            {row.pendingCount > 0 && (
+                              <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium" title={`${row.pendingCount} jurnal telah diisi siswa namun belum diverifikasi orang tua`}>
+                                +{row.pendingCount} menunggu ortu
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="p-3 text-center font-bold text-indigo-600 dark:text-indigo-400">{row.score}%</td>
                         <td className="p-3 text-center">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -1021,7 +1120,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
                         <th className="p-2.5 text-center w-8">No</th>
                         <th className="p-2.5 text-center">Tanggal</th>
                         <th className="p-2.5">1. Bangun Pagi</th>
-                        <th className="p-2.5">2. Beribadah</th>
+                        <th className="p-2.5">2. Beribadah (Status Sholat & Doa)</th>
                         <th className="p-2.5">3. Berolahraga</th>
                         <th className="p-2.5">4. Makan Sehat</th>
                         <th className="p-2.5">5. Gemar Membaca</th>
@@ -1029,12 +1128,13 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
                         <th className="p-2.5">7. Tidur Cepat</th>
                         <th className="p-2.5 text-center">Skor</th>
                         <th className="p-2.5 text-center">Validasi Ortu</th>
+                        <th className="p-2.5 text-center">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {selectedStudentJournals.length === 0 ? (
                         <tr>
-                          <td colSpan={11} className="p-8 text-center text-slate-400 text-xs">
+                          <td colSpan={12} className="p-8 text-center text-slate-400 text-xs">
                             Belum ada catatan jurnal harian untuk siswa {selectedStudent.name}.
                           </td>
                         </tr>
@@ -1048,94 +1148,163 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
                           const bm = j.habits?.bermasyarakat;
                           const ist = j.habits?.istirahat;
 
+                          const worshipItems = getWorshipStatusList(selectedStudent?.religion, ib?.values);
                           const isValidated = j.parentValidation?.status === 'valid' || j.parentValidation?.validated;
 
                           return (
                             <tr key={j.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 text-[11px]">
                               <td className="p-2.5 text-center font-mono text-slate-400">{idx + 1}</td>
-                              <td className="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                                {j.date}
+                              <td className="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap font-mono">
+                                {formatDateDDMMYY(j.date)}
                               </td>
 
                               {/* 1. Bangun Pagi */}
-                              <td className="p-2.5">
-                                {bp?.completed ? (
-                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                                    <Check className="w-3 h-3 shrink-0" />
-                                    <span>{bp.values?.wake_time || bp.time || '04:30'}</span>
-                                  </span>
+                              <td className="p-2.5 min-w-[130px]">
+                                {bp ? (
+                                  <div className="space-y-0.5">
+                                    <span className={`font-bold flex items-center gap-1 ${bp.completed ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`}>
+                                      <span>{bp.completed ? '✓' : '✗'}</span>
+                                      <span>Pkl {bp.values?.wakeTime || bp.values?.wake_time || bp.time || '04:45'}</span>
+                                    </span>
+                                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                                      <span>{[bp.values?.bedMade ? 'Rapi Kasur' : '', bp.values?.drinkWater ? 'Air Putih' : ''].filter(Boolean).join(' • ') || '-'}</span>
+                                      {bp.values?.morningMood && (
+                                        <span className="block text-amber-700 dark:text-amber-400 font-medium truncate max-w-[130px]" title={bp.values.morningMood}>
+                                          {bp.values.morningMood}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
                                 ) : (
                                   <span className="text-slate-400">-</span>
                                 )}
                               </td>
 
                               {/* 2. Beribadah */}
-                              <td className="p-2.5">
-                                {ib?.completed ? (
-                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                                    <Check className="w-3 h-3 shrink-0" />
-                                    <span>
-                                      {ib.values?.prayer_five_times ? '5 Waktu' : ''}
-                                      {ib.values?.quran_reading ? ', Tadarus' : ''}
-                                      {!ib.values?.prayer_five_times && !ib.values?.quran_reading ? 'Terlaksana' : ''}
-                                    </span>
-                                  </span>
+                              <td className="p-2.5 min-w-[180px]">
+                                {ib ? (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      {worshipItems.map(p => (
+                                        <span 
+                                          key={p.key} 
+                                          title={`${p.label}: ${p.isExecuted ? 'Dilaksanakan' : 'Tidak Dilaksanakan'}`}
+                                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 text-[9px] font-bold rounded ${
+                                            p.isExecuted 
+                                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+                                              : 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200 dark:border-rose-900'
+                                          }`}
+                                        >
+                                          <span>{p.shortLabel}:</span>
+                                          <span>{p.isExecuted ? '✓' : '✗'}</span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                    {ib.values?.holyBookDetail ? (
+                                      <span className="text-[10px] text-slate-600 dark:text-slate-400 block truncate max-w-[200px]" title={ib.values.holyBookDetail}>
+                                        📖 {ib.values.holyBookDetail}
+                                      </span>
+                                    ) : ib.values?.holyBookReading ? (
+                                      <span className="text-[10px] text-slate-500 block">📖 Kitab: Dilaksanakan</span>
+                                    ) : null}
+                                    {ib.values?.sunnahDetail ? (
+                                      <span className="text-[10px] text-slate-600 dark:text-slate-400 block truncate max-w-[200px]" title={ib.values.sunnahDetail}>
+                                        ✨ {ib.values.sunnahDetail}
+                                      </span>
+                                    ) : null}
+                                    {ib.values?.almsDetail ? (
+                                      <span className="text-[10px] text-slate-600 dark:text-slate-400 block truncate max-w-[200px]" title={ib.values.almsDetail}>
+                                        🤲 Infaq: {ib.values.almsDetail}
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 ) : (
                                   <span className="text-slate-400">-</span>
                                 )}
                               </td>
 
                               {/* 3. Berolahraga */}
-                              <td className="p-2.5">
+                              <td className="p-2.5 min-w-[130px]">
                                 {ol?.completed ? (
-                                  <span className="text-slate-800 dark:text-slate-200 font-medium">
-                                    {ol.values?.exercise_type || 'Senam'} ({ol.values?.duration || 20}m)
-                                  </span>
+                                  <div className="space-y-0.5">
+                                    <span className="text-slate-800 dark:text-slate-200 font-bold block">
+                                      🏃 {ol.values?.exerciseType || ol.values?.exercise_type || 'Olahraga'}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block">
+                                      ⏱️ {ol.values?.durationMin || ol.values?.duration || 20} Menit
+                                      {ol.values?.bodyCondition ? ` • ${ol.values.bodyCondition.split(' ')[0]}` : ''}
+                                    </span>
+                                  </div>
                                 ) : (
                                   <span className="text-slate-400">-</span>
                                 )}
                               </td>
 
                               {/* 4. Makan Sehat */}
-                              <td className="p-2.5">
+                              <td className="p-2.5 min-w-[150px]">
                                 {ms?.completed ? (
-                                  <span className="text-slate-800 dark:text-slate-200 font-medium">
-                                    {ms.values?.breakfast ? 'Sarapan' : 'Bergizi'}
-                                    {ms.values?.water_glasses ? `, ${ms.values.water_glasses}gls` : ''}
-                                  </span>
+                                  <div className="space-y-0.5">
+                                    <span className="text-slate-800 dark:text-slate-200 font-semibold truncate block max-w-[180px]" title={ms.values?.breakfastCustom || ms.values?.breakfastMenu || 'Sarapan'}>
+                                      🥗 {ms.values?.breakfastCustom || ms.values?.breakfastMenu || (ms.values?.breakfastEaten ? 'Sarapan Sehat' : 'Makan Bergizi')}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block">
+                                      {[
+                                        ms.values?.hasVegetables ? '+Sayur' : '', 
+                                        ms.values?.hasFruits ? '+Buah' : '', 
+                                        (ms.values?.waterGlasses || ms.values?.water_glasses) ? `${ms.values?.waterGlasses || ms.values?.water_glasses} gls air` : ''
+                                      ].filter(Boolean).join(' • ') || 'Bergizi Seimbang'}
+                                    </span>
+                                  </div>
                                 ) : (
                                   <span className="text-slate-400">-</span>
                                 )}
                               </td>
 
                               {/* 5. Gemar Membaca */}
-                              <td className="p-2.5 max-w-[140px] truncate" title={mb?.values?.book_title}>
+                              <td className="p-2.5 min-w-[150px]">
                                 {mb?.completed ? (
-                                  <span className="text-slate-800 dark:text-slate-200 font-medium truncate block">
-                                    📖 {mb.values?.book_title || 'Literasi'} {mb.values?.pages_read ? `(${mb.values.pages_read}hlm)` : ''}
-                                  </span>
+                                  <div className="space-y-0.5">
+                                    <span className="text-slate-800 dark:text-slate-200 font-semibold truncate block max-w-[180px]" title={mb.values?.bookTitle || mb.values?.book_title}>
+                                      📖 {mb.values?.bookTitle || mb.values?.book_title || 'Literasi'}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block">
+                                      {mb.values?.pagesRead || mb.values?.pages_read ? `${mb.values?.pagesRead || mb.values?.pages_read} hlm` : ''}
+                                      {mb.values?.readingDuration ? ` (${mb.values.readingDuration} mnt)` : ''}
+                                      {mb.values?.bookGenre ? ` • ${mb.values.bookGenre}` : ''}
+                                    </span>
+                                  </div>
                                 ) : (
                                   <span className="text-slate-400">-</span>
                                 )}
                               </td>
 
                               {/* 6. Bermasyarakat */}
-                              <td className="p-2.5 max-w-[140px] truncate" title={bm?.values?.activity_type || bm?.values?.social_action}>
+                              <td className="p-2.5 min-w-[140px]">
                                 {bm?.completed ? (
-                                  <span className="text-slate-800 dark:text-slate-200 font-medium truncate block">
-                                    🤝 {bm.values?.activity_type || bm.values?.social_action || 'Bantu Ortu'}
-                                  </span>
+                                  <div className="space-y-0.5">
+                                    <span className="text-slate-800 dark:text-slate-200 font-semibold truncate block max-w-[180px]" title={bm.values?.socialActivityCustom || (Array.isArray(bm.values?.socialActivities) ? bm.values.socialActivities.join(', ') : '') || bm.values?.activity_type}>
+                                      🤝 {bm.values?.socialActivityCustom || (Array.isArray(bm.values?.socialActivities) && bm.values.socialActivities.length > 0 ? bm.values.socialActivities[0] : '') || (bm.values?.helpParents ? 'Bantu Ortu' : '') || bm.values?.activity_type || 'Bermasyarakat'}
+                                    </span>
+                                  </div>
                                 ) : (
                                   <span className="text-slate-400">-</span>
                                 )}
                               </td>
 
                               {/* 7. Tidur Cepat */}
-                              <td className="p-2.5">
+                              <td className="p-2.5 min-w-[120px]">
                                 {ist?.completed ? (
-                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                                    Pkl {ist.values?.sleep_time || '21:00'}
-                                  </span>
+                                  <div className="space-y-0.5">
+                                    <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                                      <Check className="w-3 h-3 shrink-0" />
+                                      <span>Pkl {ist.values?.sleepTime || ist.values?.sleep_time || '21:00'}</span>
+                                    </span>
+                                    {(ist.values?.readBeforeBed || ist.values?.noGadget) && (
+                                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block">
+                                        {[ist.values?.readBeforeBed ? 'Baca' : '', ist.values?.noGadget ? 'Bebas HP' : ''].filter(Boolean).join(' • ')}
+                                      </span>
+                                    )}
+                                  </div>
                                 ) : (
                                   <span className="text-slate-400">-</span>
                                 )}
@@ -1148,15 +1317,44 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
 
                               {/* Validasi Ortu */}
                               <td className="p-2.5 text-center">
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
                                   isValidated 
                                     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' 
                                     : j.parentValidation?.status === 'invalid'
                                     ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
                                     : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
                                 }`}>
-                                  {isValidated ? 'Disetujui' : j.parentValidation?.status === 'invalid' ? 'Tidak Sesuai' : 'Menunggu'}
+                                  {isValidated ? '✓ Sah Ortu (Masuk Rekap)' : j.parentValidation?.status === 'invalid' ? '✗ Ditolak Ortu' : '⏳ Belum Validasi'}
                                 </span>
+                              </td>
+
+                              {/* Aksi Detail 7KAIH */}
+                              <td className="p-2.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => setSelectedJournalForDetail(j)}
+                                    className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-semibold text-[10px] transition-colors inline-flex items-center gap-1 shadow-xs"
+                                    title="Buka Lembar Detail 7KAIH Hari Ini"
+                                  >
+                                    <span>Detail</span>
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const teacher = PDFReportGenerator.getTeacherForClass(selectedStudent?.className, allUsers);
+                                      PDFReportGenerator.generateSingleJournalDetailReport(
+                                        selectedStudent,
+                                        j,
+                                        teacher ? { name: teacher.name, nip: teacher.nip || '' } : undefined,
+                                        schoolSettings
+                                      );
+                                    }}
+                                    className="px-2 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-600 dark:text-purple-400 font-semibold text-[10px] transition-colors inline-flex items-center gap-1 shadow-xs"
+                                    title="Cetak Lembar Detail PDF (A4 Lengkap 100%)"
+                                  >
+                                    <Printer className="w-3 h-3" />
+                                    <span>Cetak</span>
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -1173,6 +1371,20 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Detail 7KAIH Modal */}
+      {selectedJournalForDetail && (
+        <Detail7KAIHModal
+          isOpen={!!selectedJournalForDetail}
+          onClose={() => setSelectedJournalForDetail(null)}
+          journal={selectedJournalForDetail}
+          student={selectedStudent}
+          teacherInfo={(() => {
+            const t = PDFReportGenerator.getTeacherForClass(selectedStudent?.className, allUsers);
+            return t ? { name: t.name, nip: t.nip || '' } : undefined;
+          })()}
+        />
       )}
     </div>
   );

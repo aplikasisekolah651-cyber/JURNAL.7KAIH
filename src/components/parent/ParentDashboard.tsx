@@ -51,7 +51,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
-import { HABIT_LIST, KATEGORI_CONFIG, getReligionConfig, ReligionType } from '../../lib/constants';
+import { HABIT_LIST, KATEGORI_CONFIG, getReligionConfig, ReligionType, isJournalParentValidated, formatDateDDMMYY } from '../../lib/constants';
 import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
 import { PDFReportGenerator } from '../../lib/pdfGenerator';
@@ -106,7 +106,7 @@ export const ParentDashboard: React.FC = () => {
     if (!currentStudent) return undefined;
     return getStudentJournalByDate(currentStudent.id, selectedDate) || 
       studentEntries.find(e => e.date === selectedDate);
-  }, [currentStudent, selectedDate, studentEntries]);
+  }, [currentStudent, selectedDate, studentEntries, journals]);
 
   // Reason draft states per habit
   const [reasonDrafts, setReasonDrafts] = useState<Record<string, string>>({});
@@ -198,7 +198,9 @@ export const ParentDashboard: React.FC = () => {
         const habitData = currentJournal.habits[habit.id] || { completed: false, values: {} };
         const habitVerification = currentJournal.parentValidation?.habitVerifications?.[habit.id];
         
-        const isExplicitInvalid = habitVerification?.status === 'invalid' || currentJournal.parentValidation?.disputedHabits?.includes(habit.id);
+        // If habit was previously marked invalid specifically because "Tidak diisi oleh siswa", but student has now filled it, clear that invalid status
+        const isStaleUnfilledInvalid = habitData.completed && habitVerification?.status === 'invalid' && habitVerification?.reason === 'Tidak diisi oleh siswa';
+        const isExplicitInvalid = !isStaleUnfilledInvalid && (habitVerification?.status === 'invalid' || currentJournal.parentValidation?.disputedHabits?.includes(habit.id));
         const isExplicitValid = habitVerification?.status === 'valid';
 
         let status: 'valid' | 'invalid' = 'valid';
@@ -207,10 +209,10 @@ export const ParentDashboard: React.FC = () => {
         } else if (isExplicitValid) {
           status = 'valid';
         } else {
-          status = habitData.completed ? 'valid' : 'valid';
+          status = habitData.completed ? 'valid' : 'invalid';
         }
 
-        const reason = reasonDrafts[habit.id] || habitVerification?.reason || (status === 'invalid' ? 'Tidak dilaksanakan di rumah' : '');
+        const reason = reasonDrafts[habit.id] || (isStaleUnfilledInvalid ? '' : habitVerification?.reason) || (status === 'invalid' ? (!habitData.completed ? 'Tidak diisi oleh siswa' : 'Tidak dilaksanakan di rumah') : '');
 
         verifications[habit.id] = {
           status,
@@ -248,10 +250,11 @@ export const ParentDashboard: React.FC = () => {
     const currentMonth = monthNames[new Date().getMonth()] + ' ' + new Date().getFullYear();
 
     const studentTeacher = PDFReportGenerator.getTeacherForClass(currentStudent.className, allUsers);
+    const validatedEntries = studentEntries.filter(isJournalParentValidated);
 
     PDFReportGenerator.generateStudentReport(
       currentStudent,
-      studentEntries,
+      validatedEntries,
       currentMonth,
       undefined,
       schoolSettings,
@@ -270,6 +273,10 @@ export const ParentDashboard: React.FC = () => {
             <div className="flex items-center gap-2 flex-wrap">
               <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-400/30">
                 Dashboard Orang Tua / Wali Murid
+              </span>
+              <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Sinkronisasi Otomatis
               </span>
               <E2EEBadge />
             </div>
@@ -445,14 +452,48 @@ export const ParentDashboard: React.FC = () => {
           </div>
 
           {!currentJournal ? (
-            <div className="p-10 text-center bg-white dark:bg-[#1E293B] rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 space-y-3">
-              <AlertCircle className="w-10 h-10 text-amber-500 mx-auto opacity-80" />
-              <h4 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-200">
-                Belum Ada Jurnal pada Tanggal {selectedDate}
-              </h4>
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
-                Ananda <strong className="text-slate-700 dark:text-slate-300">{currentStudent?.name}</strong> belum menginput jurnal 7 KAIH pada tanggal ini. Silakan pilih tanggal lain atau ingatkan ananda untuk mengisi jurnal hariannya.
-              </p>
+            <div className="p-8 sm:p-10 text-center bg-white dark:bg-[#1E293B] rounded-2xl border border-rose-200 dark:border-rose-900/60 shadow-xs space-y-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400">
+                <X className="w-8 h-8" />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-center gap-2">
+                  <span className="px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 flex items-center gap-1.5">
+                    <X className="w-4 h-4 text-rose-600" />
+                    <span>Status Jurnal: Tidak Dilaksanakan</span>
+                  </span>
+                </div>
+                <h4 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 mt-2">
+                  Jurnal Belum / Tidak Diisi oleh Siswa ({formatDateDDMMYY(selectedDate)})
+                </h4>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                  Ananda <strong className="text-slate-700 dark:text-slate-200">{currentStudent?.name}</strong> tidak mengisi jurnal 7 KAIH pada tanggal ini, sehingga status pelaksanaan jurnal hari ini tercatat sebagai <strong className="text-rose-600 dark:text-rose-400">Tidak Dilaksanakan</strong>.
+                </p>
+              </div>
+
+              {/* Rincian 7 Kebiasaan pada tanggal yang tidak diisi */}
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-left max-w-2xl mx-auto space-y-2">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-2">
+                  Rincian 7 Kebiasaan pada Tanggal {formatDateDDMMYY(selectedDate)}:
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {HABIT_LIST.map((habit) => (
+                    <div
+                      key={habit.id}
+                      className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <HabitIcon habitId={habit.id} size={18} />
+                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">{habit.title}</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 flex items-center gap-1">
+                        <X className="w-3 h-3 text-rose-600" />
+                        Tidak Dilaksanakan
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -461,11 +502,28 @@ export const ParentDashboard: React.FC = () => {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <h3 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 dark:text-white">
-                      Laporan 7 Kebiasaan ({currentJournal.date})
+                      Laporan 7 Kebiasaan ({formatDateDDMMYY(currentJournal.date)})
                     </h3>
                     <span className="px-3 py-1 rounded-full text-xs sm:text-sm font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
                       {currentJournal.completedCount} / 7 Selesai
                     </span>
+                    {/* Explicit Journal Execution Status Badge */}
+                    {currentJournal.completedCount === 0 ? (
+                      <span className="px-3 py-1 rounded-full text-xs sm:text-sm font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 flex items-center gap-1.5">
+                        <X className="w-3.5 h-3.5 text-rose-600" />
+                        Status Jurnal: Tidak Dilaksanakan
+                      </span>
+                    ) : currentJournal.completedCount === 7 ? (
+                      <span className="px-3 py-1 rounded-full text-xs sm:text-sm font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        Status Jurnal: Dilaksanakan
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-full text-xs sm:text-sm font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                        Status Jurnal: Sebagian Dilaksanakan
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
                     Skor Pengisian: <span className="font-bold text-indigo-600 dark:text-indigo-400">{currentJournal.overallScore}%</span> • Kategori: <span className="font-bold text-slate-800 dark:text-slate-200">{KATEGORI_CONFIG[currentJournal.kategoriLevel].label}</span>
@@ -526,14 +584,19 @@ export const ParentDashboard: React.FC = () => {
                   //    - status === 'valid' -> Dilaksanakan (Green)
                   // 2. If no explicit verification yet:
                   //    - If student marked done -> Dilaksanakan (Green default)
-                  //    - If student marked not done -> Belum Dilaksanakan (Slate default)
-                  const isExplicitInvalid = habitVerification?.status === 'invalid' || currentJournal.parentValidation?.disputedHabits?.includes(habit.id);
+                  //    - If student marked not done / unfilled -> Tidak Dilaksanakan (Red default)
+                  // If habit was previously flagged invalid with reason "Tidak diisi oleh siswa", but student has now filled it, clear the stale invalid flag
+                  const isStaleUnfilledInvalid = isDone && habitVerification?.status === 'invalid' && habitVerification?.reason === 'Tidak diisi oleh siswa';
+                  const isExplicitInvalid = !isStaleUnfilledInvalid && (habitVerification?.status === 'invalid' || currentJournal.parentValidation?.disputedHabits?.includes(habit.id));
                   const isExplicitValid = habitVerification?.status === 'valid';
                   
-                  const isExecuted = !isExplicitInvalid && (isExplicitValid || isDone);
-                  const isDisputed = isExplicitInvalid;
+                  // Status execution:
+                  // - If student did not complete/fill (isDone === false): automatically "Tidak Dilaksanakan"
+                  // - If student completed: "Dilaksanakan" unless parent explicitly marked "invalid"
+                  const isExecuted = isDone && !isExplicitInvalid;
+                  const isDisputed = isDone && isExplicitInvalid;
 
-                  const isReasonActive = isDisputed || activeReasonInput === habit.id;
+                  const isReasonActive = isDone && (isExplicitInvalid || activeReasonInput === habit.id);
                   const currentReasonText = reasonDrafts[habit.id] !== undefined 
                     ? reasonDrafts[habit.id] 
                     : (habitVerification?.reason || '');
@@ -544,12 +607,10 @@ export const ParentDashboard: React.FC = () => {
                       className={`rounded-2xl border p-4 sm:p-5 transition-all ${
                         isDisputed
                           ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/60 shadow-xs'
-                          : isExecuted
-                            ? 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-800 shadow-xs'
-                            : 'bg-slate-50/80 dark:bg-slate-900/40 border-slate-200/60 dark:border-slate-800/60 opacity-95'
+                          : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-800 shadow-xs'
                       }`}
                     >
-                      {/* Habit Header: Title + Status + Benar/Tidak Action Buttons */}
+                      {/* Habit Header: Title + Status Badge (+ Action Buttons only if filled by student) */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800 gap-3">
                         <div className="flex items-center gap-3">
                           <div className={`p-2.5 rounded-2xl ${habit.badgeBg} shrink-0`}>
@@ -565,57 +626,62 @@ export const ParentDashboard: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Status Label & Confirmation Buttons: Benar vs Tidak */}
+                        {/* Status Label & Confirmation Buttons */}
                         <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-center">
-                          {/* Execution Status Badge */}
-                          {isExecuted ? (
-                            <span className="px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold bg-emerald-100 dark:bg-emerald-950/90 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1.5">
-                              <Check className="w-4 h-4 text-emerald-600" />
-                              <span>Dilaksanakan</span>
-                            </span>
-                          ) : isDisputed ? (
-                            <span className="px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold bg-rose-100 dark:bg-rose-950/90 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 flex items-center gap-1.5">
-                              <X className="w-4 h-4 text-rose-600" />
+                          {/* When the student did NOT fill/execute the habit: show ONLY the 'Tidak Dilaksanakan' badge matching screenshot */}
+                          {!isDone ? (
+                            <span className="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-300 dark:border-rose-700/80 flex items-center gap-1.5 shadow-2xs">
+                              <X className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                               <span>Tidak Dilaksanakan</span>
                             </span>
                           ) : (
-                            <span className="px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
-                              <Clock className="w-4 h-4 text-slate-400" />
-                              <span>Belum Dilaksanakan</span>
-                            </span>
+                            <>
+                              {/* Execution Status Badge for filled habit */}
+                              {isExecuted ? (
+                                <span className="px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold bg-emerald-100 dark:bg-emerald-950/90 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1.5">
+                                  <Check className="w-4 h-4 text-emerald-600" />
+                                  <span>Dilaksanakan</span>
+                                </span>
+                              ) : (
+                                <span className="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-300 dark:border-rose-700/80 flex items-center gap-1.5 shadow-2xs">
+                                  <X className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                                  <span>Tidak Dilaksanakan</span>
+                                </span>
+                              )}
+
+                              {/* Action Button: BENAR */}
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmHabit(habit.id, 'valid')}
+                                disabled={isSaving === habit.id}
+                                className={`px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 ${
+                                  isExplicitValid
+                                    ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-400/40 shadow-sm'
+                                    : 'bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-slate-300 dark:border-slate-700'
+                                }`}
+                                title="Klik jika kebiasaan ini BENAR telah dilaksanakan ananda di rumah"
+                              >
+                                <Check className="w-4 h-4" />
+                                <span>Benar</span>
+                              </button>
+
+                              {/* Action Button: TIDAK */}
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmHabit(habit.id, 'invalid')}
+                                disabled={isSaving === habit.id}
+                                className={`px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 ${
+                                  isExplicitInvalid
+                                    ? 'bg-rose-600 text-white border-rose-600 ring-2 ring-rose-400/40 shadow-sm'
+                                    : 'bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-slate-300 dark:border-slate-700'
+                                }`}
+                                title="Klik jika kebiasaan ini TIDAK dilaksanakan di rumah"
+                              >
+                                <X className="w-4 h-4" />
+                                <span>Tidak</span>
+                              </button>
+                            </>
                           )}
-
-                          {/* Action Button: BENAR */}
-                          <button
-                            type="button"
-                            onClick={() => handleConfirmHabit(habit.id, 'valid')}
-                            disabled={isSaving === habit.id}
-                            className={`px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 ${
-                              isExplicitValid
-                                ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-400/40 shadow-sm'
-                                : 'bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-slate-300 dark:border-slate-700'
-                            }`}
-                            title="Klik jika kebiasaan ini BENAR telah dilaksanakan ananda di rumah"
-                          >
-                            <Check className="w-4 h-4" />
-                            <span>Benar</span>
-                          </button>
-
-                          {/* Action Button: TIDAK */}
-                          <button
-                            type="button"
-                            onClick={() => handleConfirmHabit(habit.id, 'invalid')}
-                            disabled={isSaving === habit.id}
-                            className={`px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 ${
-                              isExplicitInvalid
-                                ? 'bg-rose-600 text-white border-rose-600 ring-2 ring-rose-400/40 shadow-sm'
-                                : 'bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-slate-300 dark:border-slate-700'
-                            }`}
-                            title="Klik jika kebiasaan ini TIDAK dilaksanakan / belum sesuai dan tuliskan alasan"
-                          >
-                            <X className="w-4 h-4" />
-                            <span>Tidak</span>
-                          </button>
                         </div>
                       </div>
 
@@ -623,26 +689,45 @@ export const ParentDashboard: React.FC = () => {
                       <div className="pt-3.5 text-xs sm:text-sm text-slate-700 dark:text-slate-300 space-y-2">
                         {/* 1. Bangun Pagi */}
                         {habit.id === 'bangun_pagi' && (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
-                            <div>
-                              <span className="text-slate-400 block text-xs font-medium">⏰ Jam Bangun Tidur:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{vals.wakeTime || '04:45'} WIB</span>
+                          !isDone ? (
+                            <div className="p-3.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                              <span>Kebiasaan ini tidak diisi oleh siswa.</span>
                             </div>
-                            <div>
-                              <span className="text-slate-400 block text-xs font-medium">🛏️ Rapikan Tempat Tidur:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{vals.bedMade || vals.tidyBed ? '✓ Rapi Mandiri' : 'Belum'}</span>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
+                              <div>
+                                <span className="text-slate-400 block text-xs font-medium">⏰ Jam Bangun Tidur:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base font-mono">
+                                  {vals.wakeTime || vals.wake_time ? `${vals.wakeTime || vals.wake_time} WIB` : '-'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-xs font-medium">🛏️ Rapikan Tempat Tidur:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">
+                                  {vals.bedMade || vals.tidyBed ? '✓ Rapi Mandiri' : (vals.bedMade === false ? 'Tidak' : '-')}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-xs font-medium">💧 Air Putih & Perasaan:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">
+                                  {[vals.drinkWater ? '✓ Minum Air' : '', vals.morningMood || ''].filter(Boolean).join(' • ') || '-'}
+                                </span>
+                              </div>
                             </div>
-                            <div>
-                              <span className="text-slate-400 block text-xs font-medium">💧 Air Putih & Perasaan:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">
-                                {vals.drinkWater ? '✓ Minum Air' : '-'} • {vals.morningMood || 'Bersemangat 😊'}
-                              </span>
-                            </div>
-                          </div>
+                          )
                         )}
 
                         {/* 2. Beribadah (Inklusif Multi-Agama) */}
                         {habit.id === 'ibadah' && (() => {
+                          if (!isDone) {
+                            return (
+                              <div className="p-3.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                                <span>Kebiasaan ini tidak diisi oleh siswa.</span>
+                              </div>
+                            );
+                          }
                           const studentRel = (vals.religion || currentStudent?.religion || 'Islam') as ReligionType;
                           const relConfig = getReligionConfig(studentRel);
 
@@ -665,32 +750,34 @@ export const ParentDashboard: React.FC = () => {
                                           : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
                                       }`}
                                     >
-                                      {vals[p.key] ? '✓ ' : ''}{p.label}
+                                      {vals[p.key] ? '✓ ' : '✗ '}{p.label}
                                     </span>
                                   ))}
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-200/70 dark:border-slate-700/60">
-                                <div>
-                                  <span className="text-slate-400 block text-xs font-medium">✨ {relConfig.extraWorshipLabel.split('/')[0]}:</span>
-                                  <span className="font-bold text-slate-800 dark:text-slate-100">
-                                    {vals.sunnahWorship ? (vals.sunnahDetail || 'Dilaksanakan') : 'Tidak ada'}
-                                  </span>
+                              {(vals.sunnahDetail || vals.sunnahWorship || vals.holyBookDetail || vals.holyBookReading || vals.almsDetail || vals.almsGiving) && (
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-200/70 dark:border-slate-700/60">
+                                  <div>
+                                    <span className="text-slate-400 block text-xs font-medium">✨ {relConfig.extraWorshipLabel.split('/')[0]}:</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-100">
+                                      {vals.sunnahDetail || (vals.sunnahWorship ? 'Dilaksanakan' : '-')}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-xs font-medium">📖 {relConfig.holyBookLabel.split('/')[0]}:</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-100">
+                                      {vals.holyBookDetail || (vals.holyBookReading ? 'Dibaca' : '-')}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-xs font-medium">🤲 {relConfig.almsLabel.split('/')[0]}:</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-100">
+                                      {vals.almsDetail || (vals.almsGiving ? 'Berbagi/Berdana' : '-')}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div>
-                                  <span className="text-slate-400 block text-xs font-medium">📖 {relConfig.holyBookLabel.split('/')[0]}:</span>
-                                  <span className="font-bold text-slate-800 dark:text-slate-100">
-                                    {vals.holyBookReading ? (vals.holyBookDetail || 'Dibaca') : 'Tidak ada'}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block text-xs font-medium">🤲 {relConfig.almsLabel.split('/')[0]}:</span>
-                                  <span className="font-bold text-slate-800 dark:text-slate-100">
-                                    {vals.almsGiving ? (vals.almsDetail || 'Berbagi/Berdana') : 'Tidak ada'}
-                                  </span>
-                                </div>
-                              </div>
+                              )}
 
                               {vals.spiritualNote && (
                                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 italic pt-1">
@@ -703,124 +790,178 @@ export const ParentDashboard: React.FC = () => {
 
                         {/* 3. Berolahraga */}
                         {habit.id === 'olahraga' && (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
-                            <div>
-                              <span className="text-slate-400 block text-xs font-medium">🏃 Jenis Olahraga:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100">{vals.exerciseType || 'Senam / Jalan Pagi'}</span>
+                          !isDone ? (
+                            <div className="p-3.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                              <span>Kebiasaan ini tidak diisi oleh siswa.</span>
                             </div>
-                            <div>
-                              <span className="text-slate-400 block text-xs font-medium">⏱️ Durasi:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100">{vals.durationMin || 15} Menit</span>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
+                              <div>
+                                <span className="text-slate-400 block text-xs font-medium">🏃 Jenis Olahraga:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100">{vals.exerciseType || vals.exercise_type || '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-xs font-medium">⏱️ Durasi:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100">{vals.durationMin || vals.duration ? `${vals.durationMin || vals.duration} Menit` : '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-xs font-medium">💪 Kondisi Tubuh:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100">
+                                  {vals.bodyCondition || '-'}
+                                </span>
+                              </div>
                             </div>
-                            <div>
-                              <span className="text-slate-400 block text-xs font-medium">💧 Pemanasan & Air:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100">
-                                {vals.warmupDone ? '✓ Pemanasan' : '-'} • {vals.drinkWaterAfter ? '✓ Cukup Air' : '-'}
-                              </span>
-                            </div>
-                          </div>
+                          )
                         )}
 
                         {/* 4. Makan Sehat */}
                         {habit.id === 'makan_sehat' && (
-                          <div className="space-y-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
-                                <span className="text-xs font-bold text-green-700 dark:text-green-400 block">🌅 Sarapan:</span>
-                                <span className="font-semibold text-slate-800 dark:text-slate-100">
-                                  {vals.breakfastCustom || vals.breakfastMenu || (vals.breakfastEaten ? 'Sarapan Sehat' : 'Tidak Sarapan')}
-                                </span>
-                              </div>
-                              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
-                                <span className="text-xs font-bold text-green-700 dark:text-green-400 block">☀️ Makan Siang:</span>
-                                <span className="font-semibold text-slate-800 dark:text-slate-100">
-                                  {vals.lunchCustom || vals.lunchMenu || (vals.lunchEaten ? 'Makan Siang Sehat' : 'Belum')}
-                                </span>
-                              </div>
-                              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
-                                <span className="text-xs font-bold text-green-700 dark:text-green-400 block">🌙 Makan Malam:</span>
-                                <span className="font-semibold text-slate-800 dark:text-slate-100">
-                                  {vals.dinnerCustom || vals.dinnerMenu || (vals.dinnerEaten ? 'Makan Malam Sehat' : 'Belum')}
-                                </span>
-                              </div>
+                          !isDone ? (
+                            <div className="p-3.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                              <span>Kebiasaan ini tidak diisi oleh siswa.</span>
                             </div>
+                          ) : (
+                            <div className="space-y-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                                  <span className="text-xs font-bold text-green-700 dark:text-green-400 block">🌅 Sarapan:</span>
+                                  <span className="font-semibold text-slate-800 dark:text-slate-100">
+                                    {vals.breakfastCustom || vals.breakfastMenu || (vals.breakfastEaten ? 'Sarapan' : (vals.breakfastEaten === false ? 'Tidak Sarapan' : '-'))}
+                                  </span>
+                                </div>
+                                <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                                  <span className="text-xs font-bold text-green-700 dark:text-green-400 block">☀️ Makan Siang:</span>
+                                  <span className="font-semibold text-slate-800 dark:text-slate-100">
+                                    {vals.lunchCustom || vals.lunchMenu || (vals.lunchEaten ? 'Makan Siang' : (vals.lunchEaten === false ? 'Tidak Makan Siang' : '-'))}
+                                  </span>
+                                </div>
+                                <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                                  <span className="text-xs font-bold text-green-700 dark:text-green-400 block">🌙 Makan Malam:</span>
+                                  <span className="font-semibold text-slate-800 dark:text-slate-100">
+                                    {vals.dinnerCustom || vals.dinnerMenu || (vals.dinnerEaten ? 'Makan Malam' : (vals.dinnerEaten === false ? 'Tidak Makan Malam' : '-'))}
+                                  </span>
+                                </div>
+                              </div>
 
-                            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-                              <span>🥦 Sayur: <strong className="text-slate-800 dark:text-slate-100">{vals.hasVegetables ? '✓ Ya' : 'Tidak'}</strong></span>
-                              <span>🍎 Buah: <strong className="text-slate-800 dark:text-slate-100">{vals.hasFruits ? '✓ Ya' : 'Tidak'}</strong></span>
-                              <span>💧 Air Putih: <strong className="text-slate-800 dark:text-slate-100">{vals.waterGlasses || 8} Gelas</strong></span>
+                              <div className="flex flex-wrap items-center gap-3 pt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                                <span>🥦 Sayur: <strong className="text-slate-800 dark:text-slate-100">{vals.hasVegetables ? '✓ Ya' : 'Tidak'}</strong></span>
+                                <span>🍎 Buah: <strong className="text-slate-800 dark:text-slate-100">{vals.hasFruits ? '✓ Ya' : 'Tidak'}</strong></span>
+                                {vals.waterGlasses ? (
+                                  <span>💧 Air Putih: <strong className="text-slate-800 dark:text-slate-100">{vals.waterGlasses} Gelas</strong></span>
+                                ) : null}
+                              </div>
                             </div>
-                          </div>
+                          )
                         )}
 
                         {/* 5. Gemar Belajar */}
                         {habit.id === 'membaca' && (
-                          <div className="space-y-2 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                              <div>
-                                <span className="text-slate-400 block text-xs font-medium">📚 Materi / Buku:</span>
-                                <span className="font-bold text-slate-800 dark:text-slate-100">{vals.bookTitle || 'Pelajaran Sekolah'}</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400 block text-xs font-medium">⏱️ Jam Belajar:</span>
-                                <span className="font-bold text-blue-600 dark:text-blue-400">{vals.startTime || '16:00'} - {vals.endTime || '16:45'} WIB</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400 block text-xs font-medium">📄 Halaman / Bab:</span>
-                                <span className="font-bold text-slate-800 dark:text-slate-100">{vals.pageRange || 'Bab 1 - 2'}</span>
-                              </div>
+                          !isDone ? (
+                            <div className="p-3.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                              <span>Kebiasaan ini tidak diisi oleh siswa.</span>
                             </div>
-                            {vals.summaryInsight && (
-                              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 italic pt-1 border-t border-slate-200/70 dark:border-slate-700/60">
-                                "Intisari: {vals.summaryInsight}"
-                              </p>
-                            )}
-                          </div>
+                          ) : (
+                            <div className="space-y-2 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                <div>
+                                  <span className="text-slate-400 block text-xs font-medium">📚 Materi / Buku:</span>
+                                  <span className="font-bold text-slate-800 dark:text-slate-100">{vals.bookTitle || vals.book_title || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-xs font-medium">⏱️ Jam / Durasi:</span>
+                                  <span className="font-bold text-blue-600 dark:text-blue-400">
+                                    {vals.startTime && vals.endTime 
+                                      ? `${vals.startTime} - ${vals.endTime} WIB` 
+                                      : (vals.readingDuration ? `${vals.readingDuration} Menit` : '-')}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-xs font-medium">📄 Halaman / Bab:</span>
+                                  <span className="font-bold text-slate-800 dark:text-slate-100">{vals.pageRange || (vals.pagesRead ? `${vals.pagesRead} Halaman` : '-')}</span>
+                                </div>
+                              </div>
+                              {vals.summaryInsight && (
+                                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 italic pt-1 border-t border-slate-200/70 dark:border-slate-700/60">
+                                  "Intisari: {vals.summaryInsight}"
+                                </p>
+                              )}
+                              {vals.bookSummary && (
+                                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 italic pt-1 border-t border-slate-200/70 dark:border-slate-700/60">
+                                  "Ringkasan: {vals.bookSummary}"
+                                </p>
+                              )}
+                            </div>
+                          )
                         )}
 
                         {/* 6. Bermasyarakat */}
                         {habit.id === 'bermasyarakat' && (
-                          <div className="space-y-2 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                              <div>
-                                <span className="text-slate-400 block text-xs font-medium">🤝 Kegiatan Sosial:</span>
-                                <span className="font-bold text-slate-800 dark:text-slate-100">{vals.activityName || 'Membantu di Rumah / Lingkungan'}</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400 block text-xs font-medium">👥 Dengan Siapa:</span>
-                                <span className="font-bold text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950">
-                                  {vals.withWhom || 'Keluarga'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400 block text-xs font-medium">🌱 Manfaat Kegiatan:</span>
-                                <span className="font-bold text-slate-800 dark:text-slate-100">{vals.benefits || 'Mempererat hubungan & lingkungan bersih'}</span>
-                              </div>
+                          !isDone ? (
+                            <div className="p-3.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                              <span>Kebiasaan ini tidak diisi oleh siswa.</span>
                             </div>
-                            {vals.socialNotes && (
-                              <p className="text-xs sm:text-sm text-slate-500 italic pt-1">
-                                "Catatan Kebaikan: {vals.socialNotes}"
-                              </p>
-                            )}
-                          </div>
+                          ) : (
+                            <div className="space-y-2 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                <div>
+                                  <span className="text-slate-400 block text-xs font-medium">🤝 Kegiatan Sosial:</span>
+                                  <span className="font-bold text-slate-800 dark:text-slate-100">
+                                    {vals.activityName || vals.socialActivityCustom || (Array.isArray(vals.socialActivities) && vals.socialActivities.length > 0 ? vals.socialActivities.join(', ') : '') || (vals.helpParents ? 'Membantu Orang Tua' : '') || vals.activity_type || '-'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-xs font-medium">👥 Dengan Siapa:</span>
+                                  <span className="font-bold text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950">
+                                    {vals.withWhom || '-'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-xs font-medium">🌱 Manfaat Kegiatan:</span>
+                                  <span className="font-bold text-slate-800 dark:text-slate-100">{vals.benefits || '-'}</span>
+                                </div>
+                              </div>
+                              {vals.socialNotes && (
+                                <p className="text-xs sm:text-sm text-slate-500 italic pt-1 border-t border-slate-200/70 dark:border-slate-700/60">
+                                  "Catatan Kebaikan: {vals.socialNotes}"
+                                </p>
+                              )}
+                            </div>
+                          )
                         )}
 
                         {/* 7. Istirahat */}
                         {habit.id === 'istirahat' && (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
-                            <div>
-                              <span className="text-slate-400 block text-xs font-medium">🌙 Jam Tidur Malam:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100">{vals.targetSleepTime || '21:00'} WIB</span>
+                          !isDone ? (
+                            <div className="p-3.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                              <span>Kebiasaan ini tidak diisi oleh siswa.</span>
                             </div>
-                            <div>
-                              <span className="text-slate-400 block text-xs font-medium">📵 Tanpa Gadget 30 Mnt:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100">{vals.noScreenBeforeBed ? '✓ Patuh' : 'Tidak'}</span>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs sm:text-sm border border-slate-200/70 dark:border-slate-700/60">
+                              <div>
+                                <span className="text-slate-400 block text-xs font-medium">🌙 Jam Tidur Malam:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100 font-mono">
+                                  {vals.targetSleepTime || vals.sleepTime || vals.sleep_time ? `${vals.targetSleepTime || vals.sleepTime || vals.sleep_time} WIB` : '-'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-xs font-medium">📵 Tanpa Gadget 30 Mnt:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100">
+                                  {vals.noScreenBeforeBed || vals.noGadget ? '✓ Patuh' : (vals.noScreenBeforeBed === false || vals.noGadget === false ? 'Tidak' : '-')}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-xs font-medium">🙏 Berdoa Sebelum Tidur:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100">
+                                  {vals.sleepPrayerDone ? '✓ Berdoa' : (vals.sleepPrayerDone === false ? 'Tidak' : '-')}
+                                </span>
+                              </div>
                             </div>
-                            <div>
-                              <span className="text-slate-400 block text-xs font-medium">🙏 Berdoa Sebelum Tidur:</span>
-                              <span className="font-bold text-slate-800 dark:text-slate-100">{vals.sleepPrayerDone ? '✓ Berdoa' : 'Tidak'}</span>
-                            </div>
-                          </div>
+                          )
                         )}
                       </div>
 
@@ -1165,7 +1306,7 @@ export const ParentDashboard: React.FC = () => {
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <span className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                      Tanggal {j.date}
+                      Tanggal {formatDateDDMMYY(j.date)}
                     </span>
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
                       j.status === 'validated'
@@ -1189,10 +1330,10 @@ export const ParentDashboard: React.FC = () => {
                               ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
                               : done
                                 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                                : 'bg-slate-200/70 dark:bg-slate-800 text-slate-400'
+                                : 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-900'
                           }`}
                         >
-                          {isDisputed ? '✕ ' : done ? '✓ ' : ''}{h.shortName}
+                          {isDisputed ? '✕ ' : done ? '✓ ' : '✕ '}{h.shortName}
                         </span>
                       );
                     })}

@@ -8,7 +8,7 @@ import {
   HabitKategoriLevel,
   User
 } from '../types';
-import { DEFAULT_REMINDERS, HABIT_LIST } from '../lib/constants';
+import { DEFAULT_REMINDERS, HABIT_LIST, isJournalParentValidated, calculateJournalScore } from '../lib/constants';
 import { getDateString } from '../lib/mockData';
 import { audioNotifier } from '../lib/audioNotifier';
 import { E2EEService } from '../lib/crypto';
@@ -56,7 +56,7 @@ interface JournalContextType {
   clearAllJournals: () => Promise<void>;
   
   // Stats & Analytics
-  getClassAnalysis: (classId: string, studentIds: string[]) => ClassAnalysisSummary;
+  getClassAnalysis: (classId: string, studentIds: string[], onlyValidated?: boolean) => ClassAnalysisSummary;
   getStudentStats: (studentId: string) => {
     avgScore: number;
     streak: number;
@@ -104,6 +104,22 @@ export const markJournalsAsDeleted = (ids: string | string[]) => {
   } catch (e) {
     console.warn('Error marking journals as deleted:', e);
   }
+};
+
+// Global cross-tab and cross-window real-time broadcast helper
+export const broadcastJournalUpdate = (entry: JournalEntry) => {
+  try {
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      const channel = new BroadcastChannel('7kaih_journal_sync_v1');
+      channel.postMessage({ type: 'JOURNAL_SAVED', entry });
+      channel.close();
+    }
+  } catch (e) {
+    // Ignore broadcast errors
+  }
+  try {
+    window.dispatchEvent(new CustomEvent('7kaih_journal_updated', { detail: entry }));
+  } catch (e) {}
 };
 
 export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -183,6 +199,71 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications));
   }, [notifications]);
 
+  // Live Real-Time Multi-Tab & Cross-Window Synchronization
+  useEffect(() => {
+    let channel: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        channel = new BroadcastChannel('7kaih_journal_sync_v1');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'JOURNAL_SAVED' && event.data?.entry) {
+            const entry = event.data.entry as JournalEntry;
+            const deletedIds = getDeletedJournalIds();
+            const deletedUserIds = getDeletedUserIds();
+            if (!deletedIds.has(entry.id) && !deletedUserIds.has(entry.studentId)) {
+              setJournals(prev => {
+                const filtered = prev.filter(j => j.id !== entry.id);
+                return [entry, ...filtered];
+              });
+            }
+          }
+        };
+      }
+    } catch (e) {
+      console.warn('BroadcastChannel sync notice:', e);
+    }
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === JOURNALS_STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            const deletedIds = getDeletedJournalIds();
+            const deletedUserIds = getDeletedUserIds();
+            setJournals(parsed.filter(j => !deletedIds.has(j.id) && !deletedUserIds.has(j.studentId)));
+          }
+        } catch (err) {
+          console.warn('Storage sync error:', err);
+        }
+      }
+    };
+
+    const handleCustomJournalEvent = (e: any) => {
+      if (e?.detail) {
+        const entry = e.detail as JournalEntry;
+        const deletedIds = getDeletedJournalIds();
+        const deletedUserIds = getDeletedUserIds();
+        if (!deletedIds.has(entry.id) && !deletedUserIds.has(entry.studentId)) {
+          setJournals(prev => {
+            const filtered = prev.filter(j => j.id !== entry.id);
+            return [entry, ...filtered];
+          });
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageEvent);
+    window.addEventListener('7kaih_journal_updated', handleCustomJournalEvent);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageEvent);
+      window.removeEventListener('7kaih_journal_updated', handleCustomJournalEvent);
+      if (channel) {
+        channel.close();
+      }
+    };
+  }, []);
+
   // Firestore background sync & initial direct fetch
   useEffect(() => {
     if (!db) return;
@@ -203,9 +284,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
             firestoreJournals.push({ id: docSnap.id, ...data });
           }
         });
-        setJournals(firestoreJournals.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
-      } else {
-        setJournals([]);
+        setJournals(firestoreJournals.sort((a, b) => ((b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))));
       }
     }).catch(err => {
       console.warn('Firestore journals direct fetch notice:', err);
@@ -224,7 +303,9 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
             firestoreJournals.push({ id: docSnap.id, ...data });
           }
         });
-        setJournals(firestoreJournals.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+        if (firestoreJournals.length > 0) {
+          setJournals(firestoreJournals.sort((a, b) => ((b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))));
+        }
       }, (err) => {
         console.warn('Firestore journals listener notice:', err);
       });
@@ -273,18 +354,12 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
   ): Promise<JournalEntry> => {
     const entryId = entryData.id || `journal-${entryData.studentId}-${entryData.date}`;
     
-    // Count completed habits and calculate score
-    let completedCount = 0;
-    if (entryData.habits) {
-      Object.values(entryData.habits).forEach((h) => {
-        if (h.completed) completedCount++;
-      });
-    }
-
-    const overallScore = Math.round((completedCount / 7) * 100);
-    let kategoriLevel: HabitKategoriLevel = 'belum_terbiasa';
-    if (overallScore >= 80) kategoriLevel = 'sudah_terbiasa';
-    else if (overallScore >= 50) kategoriLevel = 'mulai_terbiasa';
+    // Calculate score factoring in 5 daily prayers (keterlaksanaan sholat lima waktu masuk hitungan dalam persentase)
+    const scoreCalc = calculateJournalScore(entryData.habits, (entryData.habits as any)?.ibadah?.values?.religion);
+    const overallScore = scoreCalc.overallScore;
+    const kategoriLevel = scoreCalc.kategoriLevel;
+    // completedCount: other habits completed + (1 if all mandatory prayers executed)
+    const completedCount = scoreCalc.otherCompletedCount + (scoreCalc.worshipCount === scoreCalc.worshipTotal && scoreCalc.worshipTotal > 0 ? 1 : 0);
 
     // Handle E2EE encryption for reflection
     let encryptedReflection = entryData.encryptedReflection;
@@ -296,6 +371,55 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     const existing = journals.find(j => j.id === entryId);
+
+    // Intelligently sync parentValidation when habits are changed by the student
+    let updatedParentValidation = existing?.parentValidation;
+    let nextStatus = entryData.status || (existing?.status === 'validated' ? 'validated' : 'submitted');
+
+    if (updatedParentValidation) {
+      const verifications = { ...(updatedParentValidation.habitVerifications || {}) };
+      const disputedSet = new Set(updatedParentValidation.disputedHabits || []);
+      let habitsModified = false;
+
+      HABIT_LIST.forEach(h => {
+        const prevHabit = existing?.habits?.[h.id];
+        const newHabit = (entryData.habits as any)?.[h.id];
+        const prevDone = prevHabit?.completed === true;
+        const newDone = newHabit?.completed === true;
+
+        // If the habit was updated to completed by the student
+        if (newDone && !prevDone) {
+          habitsModified = true;
+          // Clear previous invalid/unfilled verification so parent sees it as freshly executed by student
+          if (verifications[h.id]) {
+            delete verifications[h.id];
+          }
+          if (disputedSet.has(h.id)) {
+            disputedSet.delete(h.id);
+          }
+        } else if (!newDone && prevDone) {
+          habitsModified = true;
+          // If habit was marked uncompleted by student, clear old valid verification
+          if (verifications[h.id]?.status === 'valid') {
+            delete verifications[h.id];
+          }
+        } else if (newDone && verifications[h.id]?.reason === 'Tidak diisi oleh siswa') {
+          // If it was marked unfilled earlier, clean it up
+          habitsModified = true;
+          delete verifications[h.id];
+          disputedSet.delete(h.id);
+        }
+      });
+
+      if (habitsModified) {
+        updatedParentValidation = {
+          ...updatedParentValidation,
+          habitVerifications: verifications,
+          disputedHabits: Array.from(disputedSet)
+        };
+        nextStatus = 'submitted';
+      }
+    }
 
     const fullEntry: JournalEntry = {
       id: entryId,
@@ -316,16 +440,19 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
       encryptedReflection,
       decryptedReflection,
       photoProof: entryData.photoProof || existing?.photoProof,
-      status: entryData.status || (existing?.status === 'validated' ? 'validated' : 'submitted'),
-      parentValidation: existing?.parentValidation,
+      status: nextStatus,
+      parentValidation: updatedParentValidation,
       teacherFeedback: existing?.teacherFeedback
     };
 
-    // Update state
+    // Update state immediately
     setJournals(prev => {
       const filtered = prev.filter(j => j.id !== entryId);
       return [fullEntry, ...filtered];
     });
+
+    // Broadcast across all open browser tabs/windows
+    broadcastJournalUpdate(fullEntry);
 
     // Add in-app notification
     sendCustomNotification({
@@ -472,6 +599,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
 
     setJournals(prev => prev.map(j => (j.id === journalId ? updated : j)));
+    broadcastJournalUpdate(updated);
 
     if (db) {
       try {
@@ -528,6 +656,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
 
     setJournals(prev => prev.map(j => (j.id === journalId ? updated : j)));
+    broadcastJournalUpdate(updated);
 
     if (db) {
       try {
@@ -855,8 +984,11 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   };
 
-  const getClassAnalysis = (classId: string, studentIds: string[]): ClassAnalysisSummary => {
-    const classEntries = journals.filter(j => studentIds.includes(j.studentId));
+  const getClassAnalysis = (classId: string, studentIds: string[], onlyValidated: boolean = true): ClassAnalysisSummary => {
+    // Sesuai kebijakan: isian jurnal yang belum diverifikasi dan divalidasi oleh orang tua tidak masuk dalam rekapitulasi laporan
+    const classEntries = journals.filter(j => 
+      studentIds.includes(j.studentId) && (!onlyValidated || isJournalParentValidated(j))
+    );
     const totalStudents = studentIds.length || 1;
     const totalEntries = classEntries.length;
 

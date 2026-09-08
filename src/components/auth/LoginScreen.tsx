@@ -91,8 +91,8 @@ export const LoginScreen: React.FC = () => {
         <p className="mt-1 text-sm sm:text-base font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide">
           {schoolSettings.fullName || schoolSettings.name}
         </p>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
-          7 Kebiasaan Anak Indonesia Hebat • Penguatan Karakter & Literasi
+        <p className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
+          Catat Kebiasaanmu, Tumbuhkan Hebatmu!
         </p>
 
         {destinationLabel && (

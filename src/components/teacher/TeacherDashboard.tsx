@@ -43,7 +43,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
-import { DEMO_CLASSES, HABIT_LIST, KATEGORI_CONFIG, SCHOOL_CONFIG } from '../../lib/constants';
+import { DEMO_CLASSES, HABIT_LIST, KATEGORI_CONFIG, SCHOOL_CONFIG, isJournalParentValidated, getDaysInMonth, getCurrentRunningMonthStr, isDateInMonth } from '../../lib/constants';
 import { HabitId, HabitKategoriLevel, User, JournalEntry } from '../../types';
 import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
@@ -137,26 +137,30 @@ export const TeacherDashboard: React.FC = () => {
   const classStudentIds = classStudents.map(s => s.id);
 
   // Classroom Analysis Summary
-  const classAnalysis = getClassAnalysis(selectedClassId, classStudentIds);
+  // Sesuai aturan: isian jurnal yang belum diverifikasi dan divalidasi orang tua tidak masuk dalam rekapitulasi laporan
+  const classAnalysis = getClassAnalysis(selectedClassId, classStudentIds, true);
+  const currentRunningMonth = getCurrentRunningMonthStr();
 
   // Prepare table data for students with parent confirmation state
   const studentRows = classStudents.map(student => {
-    const sJournals = getStudentJournals(student.id);
-    const totalCount = sJournals.length;
+    const sAllJournals = getStudentJournals(student.id);
+    const sJournals = sAllJournals.filter(j => isDateInMonth(j.date, currentRunningMonth));
+    const validatedJournals = sJournals.filter(isJournalParentValidated);
+    const totalCount = validatedJournals.length;
+    const totalRaw = sJournals.length;
     const avgScore = totalCount > 0 
-      ? Math.round(sJournals.reduce((a, b) => a + b.overallScore, 0) / totalCount)
+      ? Math.round(validatedJournals.reduce((a, b) => a + b.overallScore, 0) / totalCount)
       : 0;
 
     let level: HabitKategoriLevel = 'belum_terbiasa';
     if (avgScore >= 80) level = 'sudah_terbiasa';
     else if (avgScore >= 50) level = 'mulai_terbiasa';
 
-    const validatedCount = sJournals.filter(j => j.status === 'validated' || j.parentValidation?.validated).length;
-    const validationRate = totalCount > 0 ? Math.round((validatedCount / totalCount) * 100) : 0;
+    const validationRate = totalRaw > 0 ? Math.round((totalCount / totalRaw) * 100) : 0;
 
     // Check if latest journal is unconfirmed by parent
-    const latestJournal = sJournals[0];
-    const isPendingParentValidation = !!latestJournal && (!latestJournal.parentValidation?.validated || latestJournal.status !== 'validated');
+    const latestJournal = sAllJournals[0];
+    const isPendingParentValidation = !!latestJournal && !isJournalParentValidated(latestJournal);
 
     // Find linked parent
     const parent = allUsers.find(u => 
@@ -169,6 +173,8 @@ export const TeacherDashboard: React.FC = () => {
       score: avgScore,
       level,
       entriesCount: totalCount,
+      totalRaw,
+      pendingCount: totalRaw - totalCount,
       validationRate,
       journals: sJournals,
       latestJournal,
@@ -226,15 +232,16 @@ export const TeacherDashboard: React.FC = () => {
     );
   };
 
-  // Export Individual Student PDF (Summary)
+  // Export Individual Student PDF (Summary / Rekapitulasi - hanya yang tervalidasi ortu)
   const handleExportStudentPDF = (student: User) => {
     const sJournals = getStudentJournals(student.id);
+    const validatedJournals = sJournals.filter(isJournalParentValidated);
     const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const currentMonth = monthNames[new Date().getMonth()] + ' ' + new Date().getFullYear();
     const teacherLookup = PDFReportGenerator.getTeacherForClass(student.className, allUsers) || { name: currentUser.name, nip: currentUser.nip };
     PDFReportGenerator.generateStudentReport(
       student,
-      sJournals,
+      validatedJournals,
       currentMonth,
       teacherNoteInput,
       schoolSettings,
@@ -591,7 +598,12 @@ export const TeacherDashboard: React.FC = () => {
                 <th className="p-2.5 rounded-l-lg">No</th>
                 <th className="p-2.5">Nama Siswa & NIS</th>
                 <th className="p-2.5 text-center">No Absen</th>
-                <th className="p-2.5 text-center">Jurnal Terisi</th>
+                <th className="p-2.5 text-center">
+                  <div>Keterisian Tervalidasi</div>
+                  <div className="text-[8px] font-normal normal-case text-slate-400 dark:text-slate-500">
+                    (Hari Valid / Bulan Berjalan)
+                  </div>
+                </th>
                 <th className="p-2.5 text-center">Skor Kepatuhan</th>
                 <th className="p-2.5 text-center">Status Keterbiasaan</th>
                 <th className="p-2.5 text-center">Status Validasi Ortu</th>
@@ -599,7 +611,11 @@ export const TeacherDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredRows.map((row, idx) => (
+              {filteredRows.map((row, idx) => {
+                const currentMonthName = new Date().toLocaleString('id-ID', { month: 'long' });
+                const totalDaysInCurrentMonth = getDaysInMonth(currentMonthName);
+
+                return (
                 <tr key={row.student.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                   <td className="p-2.5 font-semibold text-slate-400">
                     {idx + 1}
@@ -626,7 +642,7 @@ export const TeacherDashboard: React.FC = () => {
                     {row.student.attendanceNumber || row.student.noAbsen || '-'}
                   </td>
                   <td className="p-2.5 text-center font-semibold text-slate-700 dark:text-slate-300">
-                    {row.entriesCount} Hari
+                    <span>{row.entriesCount} / {totalDaysInCurrentMonth} Hari</span>
                   </td>
                   <td className="p-2.5 text-center">
                     <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
@@ -707,7 +723,8 @@ export const TeacherDashboard: React.FC = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

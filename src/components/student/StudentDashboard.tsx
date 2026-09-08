@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Calendar, 
   CheckCircle2, 
@@ -14,7 +14,8 @@ import {
   TrendingUp,
   Check,
   RotateCcw,
-  ShieldCheck
+  ShieldCheck,
+  Eye
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { 
@@ -32,12 +33,13 @@ import {
 } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
-import { HABIT_LIST, KATEGORI_CONFIG, RELIGIONS_LIST, getReligionConfig, ReligionType } from '../../lib/constants';
+import { HABIT_LIST, KATEGORI_CONFIG, RELIGIONS_LIST, getReligionConfig, ReligionType, calculateJournalScore, getWorshipStatusList, formatDateDDMMYY } from '../../lib/constants';
 import { HabitId, HabitItemData } from '../../types';
 import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
 import { audioNotifier } from '../../lib/audioNotifier';
 import { UserAvatar } from '../common/UserAvatar';
+import { Detail7KAIHModal } from '../common/Detail7KAIHModal';
 import { useNavigation, StudentTabKey } from '../../context/NavigationContext';
 
 interface StudentDashboardProps {
@@ -80,15 +82,20 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
 
   const [reflection, setReflection] = useState('');
   const [existingJournal, setExistingJournal] = useState<any>(null);
+  const [detailJournal, setDetailJournal] = useState<any>(null);
+  const isSyncReadyRef = useRef(false);
+  const lastSyncedPayloadRef = useRef<string>('');
 
-  // Sync Form State when selectedDate changes or journals update
+  // Sync Form State when selectedDate changes
   useEffect(() => {
+    isSyncReadyRef.current = false;
     const existing = getStudentJournalByDate(currentUser.id, selectedDate);
     setExistingJournal(existing || null);
 
     if (existing) {
       setHabitsData(existing.habits);
       setReflection(existing.decryptedReflection || existing.encryptedReflection || '');
+      lastSyncedPayloadRef.current = JSON.stringify({ habits: existing.habits, reflection: existing.decryptedReflection || existing.encryptedReflection || '', date: selectedDate });
     } else {
       // Default empty form
       const fresh: any = {};
@@ -104,8 +111,48 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
       });
       setHabitsData(fresh);
       setReflection('');
+      lastSyncedPayloadRef.current = JSON.stringify({ habits: fresh, reflection: '', date: selectedDate });
     }
-  }, [selectedDate, currentUser.id, getStudentJournalByDate]);
+
+    const readyTimer = setTimeout(() => {
+      isSyncReadyRef.current = true;
+    }, 150);
+    return () => clearTimeout(readyTimer);
+  }, [selectedDate, currentUser.id]);
+
+  // Real-time automatic background sync to Parent Verification & Cloud when student modifies journal data
+  useEffect(() => {
+    if (!isSyncReadyRef.current) return;
+
+    const currentPayload = JSON.stringify({ habits: habitsData, reflection, date: selectedDate });
+    if (currentPayload === lastSyncedPayloadRef.current) return;
+
+    // Only auto-sync if there is actual content filled or a journal already exists
+    const hasAnyContent = Object.values(habitsData).some((h: any) => h.completed || (h.values && Object.keys(h.values).length > 0)) || reflection.trim().length > 0 || existingJournal !== null;
+    if (!hasAnyContent) return;
+
+    const syncTimer = setTimeout(async () => {
+      try {
+        lastSyncedPayloadRef.current = currentPayload;
+        await saveJournalEntry({
+          studentId: currentUser.id,
+          studentName: currentUser.name,
+          studentNis: currentUser.nis || currentUser.nisn,
+          studentAttendanceNo: currentUser.attendanceNumber || currentUser.noAbsen,
+          studentNisn: currentUser.nis || currentUser.nisn,
+          className: currentUser.className || '7A',
+          date: selectedDate,
+          habits: habitsData,
+          decryptedReflection: reflection,
+          status: 'submitted'
+        });
+      } catch (e) {
+        console.warn('Real-time journal auto-sync notice:', e);
+      }
+    }, 600);
+
+    return () => clearTimeout(syncTimer);
+  }, [habitsData, reflection, selectedDate, currentUser, saveJournalEntry, existingJournal]);
 
   const stats = getStudentStats(currentUser.id);
   const studentHistory = getStudentJournals(currentUser.id);
@@ -114,6 +161,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
   const handleToggleHabit = (habitId: HabitId) => {
     setHabitsData(prev => {
       const current = prev[habitId];
+      // Olahraga requires exerciseType to be selected
+      if (habitId === 'olahraga' && !current.completed && !current.values?.exerciseType) {
+        return prev;
+      }
       const nextCompleted = !current.completed;
       return {
         ...prev,
@@ -131,19 +182,46 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
     setHabitsData(prev => {
       const current = prev[habitId];
       const nextValues = { ...current.values, [key]: value };
+      
+      let nextCompleted = current.completed;
+      let nextScore = current.score;
+
+      // Special rule: when exerciseType is selected, show Terlaksana button as completed
+      if (habitId === 'olahraga' && key === 'exerciseType') {
+        if (value && String(value).trim().length > 0) {
+          nextCompleted = true;
+          nextScore = 100;
+        } else {
+          nextCompleted = false;
+          nextScore = 0;
+        }
+      }
+
+      // Keterlaksanaan sholat lima waktu masuk hitungan dalam persentase keterlaksanaan
+      if (habitId === 'ibadah') {
+        const worshipList = getWorshipStatusList((nextValues?.religion || currentUser.religion || 'Islam') as string, nextValues);
+        const wCount = worshipList.filter(p => p.isExecuted).length;
+        const wTotal = worshipList.length || 5;
+        nextScore = wTotal > 0 ? Math.round((wCount / wTotal) * 100) : 0;
+        nextCompleted = wCount === wTotal && wTotal > 0;
+      }
+
       return {
         ...prev,
         [habitId]: {
           ...current,
+          completed: nextCompleted,
+          score: nextScore,
           values: nextValues
         }
       };
     });
   };
 
-  // Calculate live completion count
-  const completedCount = Object.values(habitsData).filter((h: HabitItemData) => h?.completed).length;
-  const completionPercentage = Math.round((completedCount / 7) * 100);
+  // Calculate live completion count & percentage factoring in sholat 5 waktu
+  const scoreCalc = calculateJournalScore(habitsData, currentUser.religion);
+  const completionPercentage = scoreCalc.overallScore;
+  const completedCount = scoreCalc.otherCompletedCount + (scoreCalc.worshipCount === scoreCalc.worshipTotal && scoreCalc.worshipTotal > 0 ? 1 : 0);
 
   // Save Journal Handler
   const handleSaveJournal = async () => {
@@ -161,6 +239,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
         decryptedReflection: reflection,
         status: 'submitted'
       });
+      lastSyncedPayloadRef.current = JSON.stringify({ habits: habitsData, reflection, date: selectedDate });
 
       // Confetti celebration if 5 or more habits completed
       if (completedCount >= 5) {
@@ -304,19 +383,48 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
           </button>
         </div>
 
-        {/* Date Selector */}
-        <div className="flex items-center justify-between sm:justify-start gap-2.5 bg-white dark:bg-[#1E293B] px-3.5 py-2 min-h-[42px] rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-            <span className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400 sm:hidden">Pilih Tanggal:</span>
+        {/* Action Buttons & Date Selector */}
+        <div className="flex items-center gap-2">
+          {/* Detail Rekap 7KAIH Button */}
+          <button
+            onClick={() => {
+              const currentJournalPreview: any = existingJournal || {
+                id: `preview-${selectedDate}`,
+                studentId: currentUser.id,
+                studentName: currentUser.name,
+                className: currentUser.className || '7A',
+                date: selectedDate,
+                habits: habitsData,
+                overallScore: completionPercentage,
+                completedCount: completedCount,
+                kategoriLevel: KATEGORI_CONFIG[completionPercentage >= 85 ? 'sangat_baik' : completionPercentage >= 70 ? 'baik' : 'cukup'] ? (completionPercentage >= 85 ? 'sangat_baik' : completionPercentage >= 70 ? 'baik' : 'cukup') : 'cukup',
+                decryptedReflection: reflection,
+                status: 'submitted'
+              };
+              setDetailJournal(currentJournalPreview);
+            }}
+            className="px-3.5 py-2 min-h-[42px] rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs sm:text-sm font-bold flex items-center gap-1.5 border border-emerald-200 dark:border-emerald-800 transition-colors shadow-xs cursor-pointer"
+            title="Lihat rekapitulasi data 7KAIH yang telah diisi"
+          >
+            <Eye className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span className="hidden sm:inline">Detail Rekap 7KAIH</span>
+            <span className="sm:hidden">Rekap</span>
+          </button>
+
+          {/* Date Selector */}
+          <div className="flex items-center justify-between sm:justify-start gap-2.5 bg-white dark:bg-[#1E293B] px-3.5 py-2 min-h-[42px] rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <span className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400 sm:hidden">Pilih:</span>
+            </div>
+            <input
+              type="date"
+              value={selectedDate}
+              max={todayStr}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 bg-transparent outline-none cursor-pointer"
+            />
           </div>
-          <input
-            type="date"
-            value={selectedDate}
-            max={todayStr}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 bg-transparent outline-none cursor-pointer"
-          />
         </div>
       </div>
 
@@ -430,24 +538,37 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                       </div>
 
                       {/* Complete Checkbox Button */}
-                      <button
-                        id={`toggle-habit-${habit.id}`}
-                        onClick={() => handleToggleHabit(habit.id)}
-                        className={`px-3.5 py-1.5 min-h-[38px] rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
-                          itemData.completed
-                            ? 'bg-emerald-600 text-white shadow-xs'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60'
-                        }`}
-                      >
-                        {itemData.completed ? (
-                          <>
+                      {habit.id === 'olahraga' ? (
+                        itemData.values?.exerciseType ? (
+                          <button
+                            id={`toggle-habit-${habit.id}`}
+                            onClick={() => handleToggleHabit(habit.id)}
+                            className="px-3.5 py-1.5 min-h-[38px] rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer bg-emerald-600 text-white shadow-xs animate-in fade-in duration-200"
+                          >
                             <Check className="w-4 h-4" />
                             <span>Terlaksana</span>
-                          </>
-                        ) : (
-                          <span>Tandai Selesai</span>
-                        )}
-                      </button>
+                          </button>
+                        ) : null
+                      ) : (
+                        <button
+                          id={`toggle-habit-${habit.id}`}
+                          onClick={() => handleToggleHabit(habit.id)}
+                          className={`px-3.5 py-1.5 min-h-[38px] rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                            itemData.completed
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60'
+                          }`}
+                        >
+                          {itemData.completed ? (
+                            <>
+                              <Check className="w-4 h-4" />
+                              <span>Terlaksana</span>
+                            </>
+                          ) : (
+                            <span>Tandai Selesai</span>
+                          )}
+                        </button>
+                      )}
                     </div>
 
                     {/* Subtasks Detail Inputs */}
@@ -623,7 +744,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                                       type="button"
                                       onClick={() => {
                                         handleUpdateSubValue('ibadah', p.key, !isChecked);
-                                        if (!itemData.completed) handleToggleHabit('ibadah');
                                       }}
                                       className={`py-2 px-2 rounded-xl text-xs sm:text-sm font-bold border transition-all text-center cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                                         isChecked
@@ -1330,8 +1450,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {studentHistory.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30">
-                    <td className="p-2.5 font-semibold text-slate-900 dark:text-white">
-                      {item.date}
+                    <td className="p-2.5 font-semibold text-slate-900 dark:text-white font-mono">
+                      {formatDateDDMMYY(item.date)}
                     </td>
                     <td className="p-2.5">
                       <div className="flex items-center gap-1">
@@ -1372,15 +1492,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                       )}
                     </td>
                     <td className="p-2.5">
-                      <button
-                        onClick={() => {
-                          setSelectedDate(item.date);
-                          setActiveTab('form');
-                        }}
-                        className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold hover:bg-indigo-100 text-[11px]"
-                      >
-                        Buka Jurnal
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setDetailJournal(item)}
+                          className="px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold hover:bg-emerald-100 text-[11px] flex items-center gap-1 border border-emerald-200 dark:border-emerald-800 cursor-pointer transition-colors"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Detail 7KAIH</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedDate(item.date);
+                            setActiveTab('form');
+                          }}
+                          className="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold hover:bg-indigo-100 text-[11px] cursor-pointer"
+                        >
+                          Buka Form
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1389,6 +1518,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
           </div>
         </div>
       )}
+
+      {/* Modal Detail Rekap 7KAIH */}
+      <Detail7KAIHModal
+        isOpen={!!detailJournal}
+        onClose={() => setDetailJournal(null)}
+        journal={detailJournal}
+        student={currentUser}
+      />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { HabitDefinition, HabitId, User, SchoolClass, ReminderSetting, SchoolSettings } from '../types';
+import { HabitDefinition, HabitId, User, SchoolClass, ReminderSetting, SchoolSettings, HabitKategoriLevel } from '../types';
 import { 
   DATA_URI_SISWA_PUTRA, 
   DATA_URI_SISWA_PUTRI, 
@@ -258,7 +258,6 @@ export const HABIT_DEFINITIONS: Record<HabitId, HabitDefinition> = {
     subTasks: [
       { key: 'exerciseType', label: 'Jenis Olahraga', type: 'select', options: ['Senam Pagi / Stretching', 'Jalan Kaki / Lari', 'Bersepeda', 'Sepak Bola / Futsal', 'Bulu Tangkis / Basket', 'Lainnya'], required: true },
       { key: 'durationMin', label: 'Durasi (Menit)', type: 'number', unit: 'menit', placeholder: 'contoh: 20' },
-      { key: 'stretching', label: 'Pemanasan dan Pendinginan Dilakukan', type: 'checkbox' },
       { key: 'bodyCondition', label: 'Kondisi Tubuh Setelah Olahraga', type: 'select', options: ['Sangat Bugar 💪', 'Berkeringat Sehat 🏃', 'Cukup Bugar 🚶'] }
     ]
   },
@@ -475,3 +474,265 @@ export const KATEGORI_CONFIG = {
     description: 'Pola 7 Kebiasaan Anak Indonesia Hebat telah tertanam kuat dan konsisten setiap hari.'
   }
 };
+
+export const getKategoriLevel = (score: number): 'belum_terbiasa' | 'mulai_terbiasa' | 'sudah_terbiasa' => {
+  if (score >= 80) return 'sudah_terbiasa';
+  if (score >= 50) return 'mulai_terbiasa';
+  return 'belum_terbiasa';
+};
+
+export const RELIGIONS_CONFIG = RELIGION_WORSHIP_CONFIGS;
+
+export interface PrayerStatusItem {
+  key: string;
+  label: string;
+  shortLabel: string;
+  timeHint?: string;
+  isExecuted: boolean;
+}
+
+export const getWorshipStatusList = (religionName?: string, values?: any): PrayerStatusItem[] => {
+  const config = getReligionConfig(religionName || values?.religion);
+  const v = values || {};
+  const isIslam = config.id === 'Islam';
+  const allFive = !!(v.prayerFiveTimes || v.prayer_five_times);
+
+  return config.mainPrayers.map((p) => {
+    let isExecuted = !!v[p.key];
+
+    if (isIslam) {
+      if (allFive) {
+        isExecuted = true;
+      } else if (p.key === 'prayerFajr' && (v.fajr || v.subuh)) {
+        isExecuted = true;
+      } else if (p.key === 'prayerDhuhr' && (v.dhuhr || v.dzuhur)) {
+        isExecuted = true;
+      } else if (p.key === 'prayerAsr' && (v.asr || v.ashar)) {
+        isExecuted = true;
+      } else if (p.key === 'prayerMaghrib' && v.maghrib) {
+        isExecuted = true;
+      } else if (p.key === 'prayerIsha' && (v.isha || v.isya)) {
+        isExecuted = true;
+      }
+    }
+
+    return {
+      key: p.key,
+      label: p.label,
+      shortLabel: p.shortLabel,
+      timeHint: p.timeHint,
+      isExecuted
+    };
+  });
+};
+
+export const formatWorshipDetailedStatus = (religionName?: string, values?: any): string => {
+  const list = getWorshipStatusList(religionName, values);
+  return list.map(p => `${p.shortLabel}: ${p.isExecuted ? '✓' : '✗'}`).join(' • ');
+};
+
+/**
+ * Helper to calculate total number of days in a given month string (e.g. 'September 2026' -> 30)
+ */
+export const getDaysInMonth = (monthStr?: string): number => {
+  if (!monthStr) {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  }
+  const normalized = monthStr.toLowerCase();
+  const monthsMap: Record<string, number> = {
+    januari: 31,
+    februari: 28,
+    maret: 31,
+    april: 30,
+    mei: 31,
+    juni: 30,
+    juli: 31,
+    agustus: 31,
+    september: 30,
+    oktober: 31,
+    november: 30,
+    desember: 31
+  };
+  for (const [mName, days] of Object.entries(monthsMap)) {
+    if (normalized.includes(mName)) {
+      if (mName === 'februari') {
+        const yearMatch = normalized.match(/\d{4}/);
+        const year = yearMatch ? parseInt(yearMatch[0], 10) : new Date().getFullYear();
+        const isLeap = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+        return isLeap ? 29 : 28;
+      }
+      return days;
+    }
+  }
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+};
+
+/**
+ * Helper to get the current running month label in Indonesian (e.g. 'September 2026')
+ */
+export const getCurrentRunningMonthStr = (): string => {
+  const monthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  const now = new Date();
+  return `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+};
+
+/**
+ * Helper to check if a date string (YYYY-MM-DD) falls within a given month label (e.g. 'September 2026' or 'September')
+ */
+export const isDateInMonth = (dateStr?: string, monthStr?: string): boolean => {
+  if (!dateStr) return false;
+  if (!monthStr) return true;
+  
+  const normalized = monthStr.toLowerCase();
+  const monthsMap: Record<string, string> = {
+    januari: '01',
+    februari: '02',
+    maret: '03',
+    april: '04',
+    mei: '05',
+    juni: '06',
+    juli: '07',
+    agustus: '08',
+    september: '09',
+    oktober: '10',
+    november: '11',
+    desember: '12'
+  };
+
+  let targetMonthCode = '';
+  for (const [name, code] of Object.entries(monthsMap)) {
+    if (normalized.includes(name)) {
+      targetMonthCode = code;
+      break;
+    }
+  }
+
+  if (!targetMonthCode) return true;
+
+  const yearMatch = normalized.match(/\d{4}/);
+  const targetYear = yearMatch ? yearMatch[0] : '';
+
+  if (targetYear) {
+    return dateStr.startsWith(`${targetYear}-${targetMonthCode}`);
+  }
+
+  return dateStr.includes(`-${targetMonthCode}-`);
+};
+
+/**
+ * Aturan Kebijakan Rekapitulasi Laporan:
+ * Isian jurnal yang belum diverifikasi dan divalidasi oleh orang tua, maka TIDAK AKAN masuk dalam rekapitulasi laporan.
+ * Fungsi ini mengecek apakah jurnal telah tervalidasi secara sah oleh orang tua / wali.
+ */
+export const isJournalParentValidated = (journal: any): boolean => {
+  if (!journal) return false;
+
+  // Jika status jurnal adalah needs_revision atau validasi ortu ditandai 'invalid', maka belum sah
+  if (journal.status === 'needs_revision' || journal.parentValidation?.status === 'invalid') {
+    return false;
+  }
+
+  // Harus memiliki tanda validasi yang sah dari orang tua
+  const hasParentApproval = 
+    journal.parentValidation?.validated === true ||
+    journal.parentValidation?.status === 'valid' ||
+    journal.status === 'validated';
+
+  return Boolean(hasParentApproval);
+};
+
+export interface JournalScoreDetails {
+  overallScore: number;
+  worshipCount: number;
+  worshipTotal: number;
+  worshipScore: number;
+  otherCompletedCount: number;
+  kategoriLevel: HabitKategoriLevel;
+  displaySummary: string;
+}
+
+/**
+ * Menghitung persentase keterlaksanaan jurnal 7 KAIH
+ * Sesuai ketentuan: Keterlaksanaan sholat lima waktu masuk hitungan dalam persentase keterlaksanaan
+ * Tiap waktu sholat berkontribusi terhadap persentase ibadah dan skor keseluruhan.
+ */
+export const calculateJournalScore = (
+  habits?: Record<string, any>,
+  religion?: string
+): JournalScoreDetails => {
+  const h = habits || {};
+  const otherHabitKeys = ['bangun_pagi', 'olahraga', 'makan_sehat', 'membaca', 'bermasyarakat', 'istirahat'];
+  let otherCompletedCount = 0;
+  otherHabitKeys.forEach(k => {
+    if (h[k]?.completed) otherCompletedCount++;
+  });
+
+  const ib = h['ibadah'];
+  const rel = (ib?.values?.religion || religion || 'Islam') as string;
+  const worshipList = getWorshipStatusList(rel, ib?.values);
+  const worshipTotal = worshipList.length || 5;
+  const worshipCount = worshipList.filter(p => p.isExecuted).length;
+
+  // Persentase ibadah (sholat 5 waktu)
+  const worshipScore = worshipTotal > 0 ? Math.round((worshipCount / worshipTotal) * 100) : 0;
+  
+  // Persentase total 7 KAIH: rata-rata 7 pilar di mana pilar ibadah dihitung proporsional dari sholat yang terlaksana
+  const overallScore = Math.round(((otherCompletedCount * 100) + worshipScore) / 7);
+
+  let kategoriLevel: HabitKategoriLevel = 'belum_terbiasa';
+  if (overallScore >= 80) kategoriLevel = 'sudah_terbiasa';
+  else if (overallScore >= 50) kategoriLevel = 'mulai_terbiasa';
+
+  const displaySummary = `${overallScore}% (${worshipCount}/${worshipTotal} Sholat • ${otherCompletedCount}/6 Habit Lain)`;
+
+  return {
+    overallScore,
+    worshipCount,
+    worshipTotal,
+    worshipScore,
+    otherCompletedCount,
+    kategoriLevel,
+    displaySummary
+  };
+};
+
+/**
+ * Format tanggal standar dd/mm/yy (misal: "2026-09-07" -> "07/09/26")
+ */
+export const formatDateDDMMYY = (dateInput?: string | Date | null): string => {
+  if (!dateInput) return '-';
+  try {
+    if (typeof dateInput === 'string') {
+      const trimmed = dateInput.trim();
+      const match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (match) {
+        const yy = match[1].slice(-2);
+        const mm = match[2].padStart(2, '0');
+        const dd = match[3].padStart(2, '0');
+        return `${dd}/${mm}/${yy}`;
+      }
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) {
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yy = String(d.getFullYear()).slice(-2);
+        return `${dd}/${mm}/${yy}`;
+      }
+      return trimmed;
+    } else if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+      const dd = String(dateInput.getDate()).padStart(2, '0');
+      const mm = String(dateInput.getMonth() + 1).padStart(2, '0');
+      const yy = String(dateInput.getFullYear()).slice(-2);
+      return `${dd}/${mm}/${yy}`;
+    }
+  } catch {
+    // fallback
+  }
+  return String(dateInput);
+};
+

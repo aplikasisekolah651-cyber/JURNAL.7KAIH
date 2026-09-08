@@ -44,7 +44,7 @@ import { useSchoolSettings } from '../../context/SchoolContext';
 import { User, UserRole } from '../../types';
 import { E2EEService } from '../../lib/crypto';
 import { E2EEBadge } from '../common/E2EEBadge';
-import { SCHOOL_CONFIG, RELIGIONS_LIST } from '../../lib/constants';
+import { SCHOOL_CONFIG, RELIGIONS_LIST, isJournalParentValidated } from '../../lib/constants';
 import { UserAvatar } from '../common/UserAvatar';
 import { 
   DATA_URI_SISWA_PUTRA, 
@@ -2192,10 +2192,13 @@ export const AdminDashboard: React.FC = () => {
                               <button
                                 onClick={() => {
                                   const sJournals = getStudentJournals(s.id);
+                                  const validatedJournals = sJournals.filter(isJournalParentValidated);
+                                  const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+                                  const currentMonth = monthNames[new Date().getMonth()] + ' ' + new Date().getFullYear();
                                   PDFReportGenerator.generateStudentReport(
                                     s,
-                                    sJournals,
-                                    'Agustus 2026',
+                                    validatedJournals,
+                                    currentMonth,
                                     undefined,
                                     schoolSettings
                                   );
