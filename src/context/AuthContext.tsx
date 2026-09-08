@@ -139,9 +139,11 @@ export const normalizeReligionName = (religion?: string): string => {
 };
 
 export const normalizeClassName = (cn?: string): string => {
-  if (!cn) return '7A';
-  const clean = String(cn).trim().replace(/\s+/g, ' ');
-  return clean || '7A';
+  if (!cn) return '';
+  let clean = String(cn).trim().replace(/\s+/g, ' ');
+  // Unify by stripping leading "Kelas", "Rombel", "Rombongan Belajar", "Kl." (case-insensitive)
+  clean = clean.replace(/^(kelas|rombel|rombongan\s*belajar|kl\.?)\s*[-:]?\s*/i, '').trim();
+  return clean;
 };
 
 export const normalizeClassCode = (cn?: string): string => {
@@ -166,7 +168,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u))
             .map(u => ({
               ...u,
-              className: u.className ? normalizeClassName(u.className) : u.className,
+              className: u.className ? (normalizeClassName(u.className) || u.className) : u.className,
               avatar: getUserAvatarUrl(u)
             }));
           if (filtered.length > 0) return filtered;
@@ -179,7 +181,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u))
       .map(u => ({
         ...u,
-        className: u.className ? normalizeClassName(u.className) : u.className,
+        className: u.className ? (normalizeClassName(u.className) || u.className) : u.className,
         avatar: getUserAvatarUrl(u)
       }));
   });
@@ -814,7 +816,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       attendanceNumber: userAbsen,
       noAbsen: userAbsen,
       classId: userData.classId || 'class-7a',
-      className: userData.className ? normalizeClassName(userData.className) : '7A',
+      className: userData.className ? (normalizeClassName(userData.className) || '7A') : '7A',
       parentId: userData.parentId,
       studentIds: userData.studentIds,
       assignedClassIds: userData.assignedClassIds,
@@ -1228,7 +1230,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       newParents.push(parentUser);
 
-      const normalizedClass = item.className ? normalizeClassName(item.className) : '7A';
+      const normalizedClass = item.className ? (normalizeClassName(item.className) || '7A') : '7A';
       const cleanClassId = `class-${normalizedClass.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
 
       // 2. Siswa: Kredensial terstandarisasi berbasis NIS
@@ -1306,7 +1308,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!cleanName) continue;
 
       const rawClass = (item.className || '').trim();
-      const normalizedClass = rawClass ? normalizeClassName(rawClass) : '7A';
+      const normalizedClass = rawClass ? (normalizeClassName(rawClass) || '7A') : '7A';
       const cleanClassCode = normalizedClass.toLowerCase().replace(/[^a-z0-9]/g, '');
       const cleanNip = item.nip ? String(item.nip).trim().replace(/[^0-9]/g, '') : undefined;
       

@@ -7,7 +7,7 @@ import {
   DATA_URI_ADMIN 
 } from './avatarHelper';
 
-export type ReligionType = 'Islam' | 'Katolik' | 'Kristen' | 'Hindu';
+export type ReligionType = 'Islam' | 'Katolik' | 'Kristen' | 'Hindu' | 'Buddha' | 'Konghucu';
 
 export interface ReligionPrayerItem {
   key: string;
@@ -37,9 +37,11 @@ export interface ReligionWorshipConfig {
 
 export const RELIGIONS_LIST: { id: ReligionType; name: string; icon: string }[] = [
   { id: 'Islam', name: 'Islam', icon: '🕌' },
+  { id: 'Kristen', name: 'Kristen (Protestan)', icon: '✝️' },
   { id: 'Katolik', name: 'Katolik', icon: '⛪' },
-  { id: 'Kristen', name: 'Kristen', icon: '✝️' },
-  { id: 'Hindu', name: 'Hindu', icon: '🕉️' }
+  { id: 'Hindu', name: 'Hindu', icon: '🕉️' },
+  { id: 'Buddha', name: 'Buddha', icon: '☸️' },
+  { id: 'Konghucu', name: 'Konghucu', icon: '☯️' }
 ];
 
 export const RELIGION_WORSHIP_CONFIGS: Record<string, ReligionWorshipConfig> = {

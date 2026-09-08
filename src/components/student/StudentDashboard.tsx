@@ -33,7 +33,7 @@ import {
 } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
-import { HABIT_LIST, KATEGORI_CONFIG, RELIGIONS_LIST, getReligionConfig, ReligionType, calculateJournalScore, getWorshipStatusList, formatDateDDMMYY } from '../../lib/constants';
+import { HABIT_LIST, KATEGORI_CONFIG, getReligionConfig, ReligionType, calculateJournalScore, getWorshipStatusList, formatDateDDMMYY } from '../../lib/constants';
 import { HabitId, HabitItemData } from '../../types';
 import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
@@ -74,7 +74,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
         time: h.defaultTime,
         score: 0,
         note: '',
-        values: {}
+        values: h.id === 'ibadah' ? { religion: currentUser?.religion || 'Islam' } : {}
       };
     });
     return initial;
@@ -93,9 +93,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
     setExistingJournal(existing || null);
 
     if (existing) {
-      setHabitsData(existing.habits);
+      const syncedHabits = { ...existing.habits };
+      if (syncedHabits.ibadah) {
+        syncedHabits.ibadah = {
+          ...syncedHabits.ibadah,
+          values: {
+            ...syncedHabits.ibadah.values,
+            religion: currentUser?.religion || syncedHabits.ibadah.values?.religion || 'Islam'
+          }
+        };
+      }
+      setHabitsData(syncedHabits);
       setReflection(existing.decryptedReflection || existing.encryptedReflection || '');
-      lastSyncedPayloadRef.current = JSON.stringify({ habits: existing.habits, reflection: existing.decryptedReflection || existing.encryptedReflection || '', date: selectedDate });
+      lastSyncedPayloadRef.current = JSON.stringify({ habits: syncedHabits, reflection: existing.decryptedReflection || existing.encryptedReflection || '', date: selectedDate });
     } else {
       // Default empty form
       const fresh: any = {};
@@ -106,7 +116,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
           time: h.defaultTime,
           score: 0,
           note: '',
-          values: {}
+          values: h.id === 'ibadah' ? { religion: currentUser?.religion || 'Islam' } : {}
         };
       });
       setHabitsData(fresh);
@@ -118,7 +128,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
       isSyncReadyRef.current = true;
     }, 150);
     return () => clearTimeout(readyTimer);
-  }, [selectedDate, currentUser.id]);
+  }, [selectedDate, currentUser.id, currentUser.religion]);
 
   // Real-time automatic background sync to Parent Verification & Cloud when student modifies journal data
   useEffect(() => {
@@ -181,7 +191,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
   const handleUpdateSubValue = (habitId: HabitId, key: string, value: any) => {
     setHabitsData(prev => {
       const current = prev[habitId];
-      const nextValues = { ...current.values, [key]: value };
+      const nextValues = { 
+        ...current.values, 
+        [key]: value,
+        ...(habitId === 'ibadah' ? { religion: currentUser?.religion || 'Islam' } : {})
+      };
       
       let nextCompleted = current.completed;
       let nextScore = current.score;
@@ -197,9 +211,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
         }
       }
 
-      // Keterlaksanaan sholat lima waktu masuk hitungan dalam persentase keterlaksanaan
+      // Keterlaksanaan ibadah masuk hitungan dalam persentase keterlaksanaan
       if (habitId === 'ibadah') {
-        const worshipList = getWorshipStatusList((nextValues?.religion || currentUser.religion || 'Islam') as string, nextValues);
+        const studentRel = (currentUser?.religion || nextValues?.religion || 'Islam') as string;
+        const worshipList = getWorshipStatusList(studentRel, nextValues);
         const wCount = worshipList.filter(p => p.isExecuted).length;
         const wTotal = worshipList.length || 5;
         nextScore = wTotal > 0 ? Math.round((wCount / wTotal) * 100) : 0;
@@ -684,45 +699,30 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ initialDate 
                         </div>
                       )}
 
-                      {/* 2. Custom UI for Ibadah (4 Agama: Islam, Katolik, Kristen, Hindu) */}
+                      {/* 2. Custom UI for Ibadah (Disesuaikan khusus dengan Agama Siswa) */}
                       {habit.id === 'ibadah' && (() => {
-                        const currentRel = (itemData.values?.religion || currentUser?.religion || 'Islam') as ReligionType;
+                        const currentRel = (currentUser?.religion || itemData.values?.religion || 'Islam') as ReligionType;
                         const relConfig = getReligionConfig(currentRel);
 
                         return (
                           <div className="space-y-3">
-                            {/* Pilihan Agama Siswa (4 Agama) */}
-                            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                  <span>{relConfig.icon}</span>
-                                  <span>Pilihan Agama (4 Agama):</span>
-                                </span>
-                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                                  {relConfig.name}
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                                {RELIGIONS_LIST.map((rel) => {
-                                  const isSelected = currentRel === rel.id;
-                                  return (
-                                    <button
-                                      key={rel.id}
-                                      type="button"
-                                      onClick={() => {
-                                        handleUpdateSubValue('ibadah', 'religion', rel.id);
-                                      }}
-                                      className={`py-2 px-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
-                                        isSelected
-                                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white shadow-xs'
-                                          : 'bg-white dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'
-                                      }`}
-                                    >
-                                      <span>{rel.icon}</span>
-                                      <span className="truncate">{rel.name}</span>
-                                    </button>
-                                  );
-                                })}
+                            {/* Status Agama Siswa Terdaftar */}
+                            <div className="p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/40 flex items-center justify-between">
+                              <div className="flex items-center gap-2.5">
+                                <span className="text-2xl">{relConfig.icon}</span>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs sm:text-sm font-bold text-emerald-900 dark:text-emerald-200">
+                                      Ibadah Agama {relConfig.name}
+                                    </span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">
+                                      Otomatis Sesuai Profil
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-emerald-700/90 dark:text-emerald-400 mt-0.5">
+                                    Isian ibadah disesuaikan khusus untuk agama Anda ({currentRel}).
+                                  </p>
+                                </div>
                               </div>
                             </div>
 

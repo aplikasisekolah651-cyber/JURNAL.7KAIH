@@ -29,7 +29,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth, normalizeClassName } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
 import { PDFReportGenerator } from '../../lib/pdfGenerator';
@@ -92,13 +92,22 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
   const availableClasses = useMemo(() => {
     const classSet = new Set<string>();
     students.forEach(s => {
-      if (s.className && s.className.trim()) classSet.add(s.className.trim());
+      const c = normalizeClassName(s.className);
+      if (c) classSet.add(c);
     });
+    if (classSet.size === 0) {
+      teachers.forEach(t => {
+        if (t.className) {
+          const c = normalizeClassName(t.className.replace(/\s*\(.*?\)\s*/g, ''));
+          if (c) classSet.add(c);
+        }
+      });
+    }
     if (classSet.size === 0) {
       return ['7A', '7B', '8A', '9A'];
     }
     return Array.from(classSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [students]);
+  }, [students, teachers]);
 
   // Keep selected collective class in sync with available classes
   useEffect(() => {
@@ -110,7 +119,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
   // Filtered Students for Individual & Detail Mode
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
-      const matchClass = selectedClassForIndiv === 'all' || s.className === selectedClassForIndiv;
+      const matchClass = selectedClassForIndiv === 'all' || normalizeClassName(s.className) === selectedClassForIndiv;
       const matchSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (s.nis && s.nis.includes(searchQuery)) ||
                           (s.nisn && s.nisn.includes(searchQuery));
@@ -307,7 +316,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
 
   // Collective Class Data
   const classStudents = useMemo(() => {
-    return students.filter(s => s.className === selectedClassForCollect);
+    return students.filter(s => normalizeClassName(s.className) === selectedClassForCollect);
   }, [students, selectedClassForCollect]);
 
   const classTeacher = useMemo(() => {
@@ -355,7 +364,7 @@ export const AdminReports: React.FC<AdminReportsProps> = () => {
 
   // Export Collective Class PDF
   const handlePrintCollectiveClassPDF = (targetClass: string) => {
-    const targetStudents = students.filter(s => s.className === targetClass);
+    const targetStudents = students.filter(s => normalizeClassName(s.className) === targetClass);
     const targetStudentIds = targetStudents.map(s => s.id);
     const targetAnalysis = getClassAnalysis(targetClass, targetStudentIds, true);
     const targetTeacherObj = PDFReportGenerator.getTeacherForClass(targetClass, allUsers);

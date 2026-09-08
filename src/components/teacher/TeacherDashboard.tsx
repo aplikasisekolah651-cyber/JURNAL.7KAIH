@@ -40,10 +40,10 @@ import {
   Tooltip, 
   CartesianGrid 
 } from 'recharts';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth, normalizeClassName } from '../../context/AuthContext';
 import { useJournal } from '../../context/JournalContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
-import { DEMO_CLASSES, HABIT_LIST, KATEGORI_CONFIG, SCHOOL_CONFIG, isJournalParentValidated, getDaysInMonth, getCurrentRunningMonthStr, isDateInMonth } from '../../lib/constants';
+import { HABIT_LIST, KATEGORI_CONFIG, SCHOOL_CONFIG, isJournalParentValidated, getDaysInMonth, getCurrentRunningMonthStr, isDateInMonth } from '../../lib/constants';
 import { HabitId, HabitKategoriLevel, User, JournalEntry } from '../../types';
 import { HabitIcon } from '../common/HabitIcon';
 import { E2EEBadge } from '../common/E2EEBadge';
@@ -70,9 +70,9 @@ export const TeacherDashboard: React.FC = () => {
     // Scan all student users
     const students = allUsers.filter(u => u.role === 'siswa');
     students.forEach(s => {
-      const cName = s.className ? s.className.trim() : '7A';
-      const cId = s.classId || `class-${cName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-      const displayName = cName.toLowerCase().startsWith('kelas') ? cName : `Kelas ${cName}`;
+      const cName = normalizeClassName(s.className) || '7A';
+      const cId = `class-${cName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+      const displayName = `Kelas ${cName}`;
       if (!classMap.has(cId)) {
         classMap.set(cId, { id: cId, name: displayName, rawName: cName, studentCount: 0 });
       }
@@ -218,8 +218,8 @@ export const TeacherDashboard: React.FC = () => {
   const handleExportClassPDF = () => {
     const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const currentMonth = monthNames[new Date().getMonth()] + ' ' + new Date().getFullYear();
-    const currentClassObj = DEMO_CLASSES.find(c => c.id === selectedClassId);
-    const clsName = currentClassObj ? currentClassObj.name : '7A';
+    const currentClassObj = availableClasses.find(c => c.id === selectedClassId);
+    const clsName = currentClassObj ? currentClassObj.rawName : selectedClassName || '7A';
     const teacherLookup = PDFReportGenerator.getTeacherForClass(clsName, allUsers) || { name: currentUser.name, nip: currentUser.nip };
     PDFReportGenerator.generateClassReport(
       clsName,

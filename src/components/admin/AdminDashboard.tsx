@@ -130,15 +130,31 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Dynamically extract all available classes strictly matching imported students
+  // Dynamically extract all available classes strictly matching imported students and active users
   const availableClasses = useMemo(() => {
     const classSet = new Set<string>();
     
     // Extract classes directly from all registered students
-    const students = allUsers.filter(u => u.role === 'siswa');
-    students.forEach(s => {
-      if (s.className && s.className.trim()) {
-        classSet.add(s.className.trim());
+    const studentsList = allUsers.filter(u => u.role === 'siswa');
+    studentsList.forEach(s => {
+      const c = normalizeClassName(s.className);
+      if (c) {
+        classSet.add(c);
+      }
+    });
+
+    // Also include classes assigned to homeroom teachers if not yet in set
+    const teachersList = allUsers.filter(u => u.role === 'walikelas');
+    teachersList.forEach(t => {
+      if (t.className) {
+        const c = normalizeClassName(t.className.replace(/\s*\(.*?\)\s*/g, ''));
+        if (c) classSet.add(c);
+      }
+      if (t.assignedClassIds) {
+        t.assignedClassIds.forEach(cid => {
+          const cleanCid = cid.replace(/^class-/, '').toUpperCase();
+          if (cleanCid) classSet.add(cleanCid);
+        });
       }
     });
 
@@ -318,10 +334,38 @@ export const AdminDashboard: React.FC = () => {
     return ['islam', 'kristen', 'protestan', 'katolik', 'catholic', 'hindu', 'buddha', 'budha', 'konghucu', 'khonghucu'].some(r => s.includes(r));
   };
 
+  const cleanAndFormatClassToken = (val?: string): string => {
+    if (!val) return '';
+    let raw = String(val).trim().replace(/^["']|["']$/g, '');
+    // Strip "Kelas", "Rombel", "Rombongan Belajar", "Kl."
+    raw = raw.replace(/^(kelas|rombel|rombongan\s*belajar|kl\.?)\s*[-:]?\s*/i, '').trim();
+    return raw;
+  };
+
   const isClassToken = (val?: string): boolean => {
     if (!val) return false;
-    const s = String(val).trim().toUpperCase().replace(/\s+/g, '');
-    return /^[789VII|vii|VIII|IX|X]+[A-Z0-9]*$/.test(s) || /^[0-9]{1,2}[A-Z]$/.test(s);
+    const raw = String(val).trim().replace(/^["']|["']$/g, '');
+    if (!raw || raw.length > 25) return false;
+    
+    // Explicit prefix "Kelas ...", "Rombel ...", "Kl. ..."
+    if (/^(kelas|rombel|rombongan\s*belajar|kl\.?)\s*[-:]?\s*[a-z0-9]/i.test(raw)) {
+      return true;
+    }
+
+    const stripped = cleanAndFormatClassToken(raw);
+    if (!stripped) return false;
+
+    // Pattern 1: Grades 1-12 followed by optional separator and letter/number (e.g. 7A, 7B, 7-A, 7.A, 7.1, 7-1, 8B, 9C, 10A, 10-1, 11-IPA-1, 12 IPS 2, etc.)
+    if (/^([1-9]|1[0-2])\s*[-/.]?\s*([a-zA-Z0-9]+(\s*[-/.]?\s*[a-zA-Z0-9]+)*)$/i.test(stripped)) {
+      return true;
+    }
+
+    // Pattern 2: Roman numerals I to XII (e.g. VII A, VII-A, VII.1, VIII B, IX C, X-1, XI MIPA 1, XII IPS 2)
+    if (/^(I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)\s*[-/.]?\s*([a-zA-Z0-9]+(\s*[-/.]?\s*[a-zA-Z0-9]+)*)$/i.test(stripped)) {
+      return true;
+    }
+
+    return false;
   };
 
   const isPhoneToken = (val?: string): boolean => {
@@ -603,7 +647,7 @@ export const AdminDashboard: React.FC = () => {
 
       // 2. Class token (e.g. 7A, 7B, 8A, 9A, etc.)
       if (!className && (isClassToken(tok) || /^(kelas\s*)?[789VII|VIII|IX]+[A-Z0-9]*$/i.test(tok))) {
-        className = tok.toUpperCase().replace(/^KELAS\s*/i, '').replace(/\s+/g, '');
+        className = cleanAndFormatClassToken(tok) || normalizeClassName(tok) || tok.toUpperCase().replace(/^KELAS\s*/i, '').replace(/\s+/g, '');
         return;
       }
 
@@ -663,10 +707,10 @@ export const AdminDashboard: React.FC = () => {
     }
     if (!className) {
       const clsCand = rawTokens.find(t => isClassToken(t));
-      className = clsCand ? clsCand.toUpperCase().replace(/\s+/g, '') : '7A';
+      className = clsCand ? (cleanAndFormatClassToken(clsCand) || normalizeClassName(clsCand)) : '7A';
     }
 
-    const cleanClassCode = className ? className.toUpperCase().replace(/[^A-Z0-9]/g, '') : '7A';
+    const cleanClassCode = className ? normalizeClassName(className) : '7A';
 
     if (!username) {
       username = `wali.${cleanClassCode.toLowerCase()}`;
@@ -715,7 +759,7 @@ export const AdminDashboard: React.FC = () => {
   // Filtered Students
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
-      const matchClass = selectedClass === 'all' || s.className === selectedClass;
+      const matchClass = selectedClass === 'all' || (normalizeClassName(s.className) || s.className) === selectedClass;
       const matchSearch = s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
                           (s.nis && s.nis.includes(studentSearch)) ||
                           (s.nisn && s.nisn.includes(studentSearch)) ||
@@ -735,7 +779,7 @@ export const AdminDashboard: React.FC = () => {
       if (!matchSearch) return false;
       if (parentSelectedClass === 'all') return true;
       const linkedChildren = students.filter(s => s.parentId === p.id || (p.studentIds && p.studentIds.includes(s.id)));
-      return linkedChildren.some(c => c.className === parentSelectedClass);
+      return linkedChildren.some(c => (normalizeClassName(c.className) || c.className) === parentSelectedClass);
     });
   }, [parents, parentSearch, parentSelectedClass, students]);
 
@@ -1233,7 +1277,48 @@ export const AdminDashboard: React.FC = () => {
         const parsedLines: string[] = [];
         let validIdx = 1;
 
-        for (let r = 0; r < rawRows.length; r++) {
+        // Detect header row index and column positions
+        let headerRowIdx = -1;
+        const colMap: { [key: string]: number } = {};
+
+        for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
+          const row = rawRows[r];
+          if (!row || !Array.isArray(row) || row.length === 0) continue;
+          const strCells = row.map(c => cleanExcelCellValue(c).toLowerCase());
+          const hasNama = strCells.some(c => c.includes('nama') && !c.includes('ortu') && !c.includes('wali'));
+          const hasNis = strCells.some(c => c.includes('nis'));
+          const hasKelas = strCells.some(c => c.includes('kelas') || c.includes('rombel') || c.includes('rombongan'));
+
+          if ((hasNama && (hasNis || hasKelas)) || (hasNis && hasKelas)) {
+            headerRowIdx = r;
+            strCells.forEach((c, idx) => {
+              if (c.includes('nisn')) colMap['nisn'] = idx;
+              else if (c.includes('nis')) colMap['nis'] = idx;
+              else if (c.includes('absen') || c.includes('presensi') || c.includes('urut')) colMap['absen'] = idx;
+              else if (c.includes('nama') && (c.includes('siswa') || c.includes('lengkap') || (!c.includes('ortu') && !c.includes('wali') && !c.includes('ayah') && !c.includes('ibu')))) {
+                if (colMap['name'] === undefined) colMap['name'] = idx;
+              }
+              else if (c.includes('kelamin') || c.includes('gender') || c === 'l/p' || c === 'jk') colMap['gender'] = idx;
+              else if (c.includes('agama') || c.includes('religion')) colMap['religion'] = idx;
+              else if (c.includes('kelas') || c.includes('rombel') || c.includes('rombongan')) colMap['class'] = idx;
+              else if (c.includes('ortu') || c.includes('wali') || c.includes('ayah') || c.includes('ibu')) {
+                if (c.includes('hp') || c.includes('wa') || c.includes('telp') || c.includes('ponsel') || c.includes('kontak')) {
+                  colMap['parentPhone'] = idx;
+                } else {
+                  colMap['parentName'] = idx;
+                }
+              }
+              else if (c.includes('hp') || c.includes('wa') || c.includes('telp') || c.includes('ponsel') || c.includes('kontak')) {
+                colMap['parentPhone'] = idx;
+              }
+            });
+            break;
+          }
+        }
+
+        const startRow = headerRowIdx >= 0 ? headerRowIdx + 1 : 0;
+
+        for (let r = startRow; r < rawRows.length; r++) {
           const row = rawRows[r];
           if (!row || row.length === 0) continue;
 
@@ -1242,6 +1327,25 @@ export const AdminDashboard: React.FC = () => {
           if (!joinedRow.trim()) continue;
 
           const parsed = parseImportLine(joinedRow, validIdx);
+
+          // If explicit column mapping exists, override specific parsed tokens
+          if (headerRowIdx >= 0) {
+            if (colMap['class'] !== undefined) {
+              const explicitClass = cleanExcelCellValue(row[colMap['class']]);
+              if (explicitClass) {
+                const normalizedCls = cleanAndFormatClassToken(explicitClass) || normalizeClassName(explicitClass);
+                if (normalizedCls) parsed.className = normalizedCls;
+              }
+            }
+            if (colMap['name'] !== undefined) {
+              const explicitName = cleanExcelCellValue(row[colMap['name']]);
+              if (explicitName) parsed.name = explicitName;
+            }
+            if (colMap['nis'] !== undefined) {
+              const explicitNis = cleanExcelCellValue(row[colMap['nis']]);
+              if (explicitNis) parsed.nis = explicitNis;
+            }
+          }
 
           // Skip header row
           if (parsed.isHeader) continue;
@@ -1400,7 +1504,43 @@ export const AdminDashboard: React.FC = () => {
         const parsedLines: string[] = [];
         let validIdx = 1;
 
-        for (let r = 0; r < rawRows.length; r++) {
+        // Detect header row index and column positions for teachers
+        let headerRowIdx = -1;
+        const colMap: { [key: string]: number } = {};
+
+        for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
+          const row = rawRows[r];
+          if (!row || !Array.isArray(row) || row.length === 0) continue;
+          const strCells = row.map(c => cleanExcelCellValue(c).toLowerCase());
+          const hasNama = strCells.some(c => c.includes('nama'));
+          const hasKelas = strCells.some(c => c.includes('kelas') || c.includes('binaan') || c.includes('rombel'));
+
+          if (hasNama && hasKelas) {
+            headerRowIdx = r;
+            strCells.forEach((c, idx) => {
+              if (c.includes('nama')) {
+                if (colMap['name'] === undefined) colMap['name'] = idx;
+              } else if (c.includes('nip') || c.includes('nuptk')) {
+                colMap['nip'] = idx;
+              } else if (c.includes('kelas') || c.includes('binaan') || c.includes('rombel')) {
+                colMap['class'] = idx;
+              } else if (c.includes('kelamin') || c.includes('gender') || c === 'l/p' || c === 'jk') {
+                colMap['gender'] = idx;
+              } else if (c.includes('hp') || c.includes('wa') || c.includes('telp') || c.includes('kontak')) {
+                colMap['phone'] = idx;
+              } else if (c.includes('user')) {
+                colMap['username'] = idx;
+              } else if (c.includes('pass') || c.includes('sandi')) {
+                colMap['password'] = idx;
+              }
+            });
+            break;
+          }
+        }
+
+        const startRow = headerRowIdx >= 0 ? headerRowIdx + 1 : 0;
+
+        for (let r = startRow; r < rawRows.length; r++) {
           const row = rawRows[r];
           if (!row || row.length === 0) continue;
 
@@ -1408,6 +1548,25 @@ export const AdminDashboard: React.FC = () => {
           if (!joinedRow.trim()) continue;
 
           const parsed = parseTeacherImportLine(joinedRow, validIdx);
+
+          if (headerRowIdx >= 0) {
+            if (colMap['class'] !== undefined) {
+              const explicitClass = cleanExcelCellValue(row[colMap['class']]);
+              if (explicitClass) {
+                const normalizedCls = cleanAndFormatClassToken(explicitClass) || normalizeClassName(explicitClass);
+                if (normalizedCls) parsed.className = normalizedCls;
+              }
+            }
+            if (colMap['name'] !== undefined) {
+              const explicitName = cleanExcelCellValue(row[colMap['name']]);
+              if (explicitName) parsed.name = explicitName;
+            }
+            if (colMap['nip'] !== undefined) {
+              const explicitNip = cleanExcelCellValue(row[colMap['nip']]);
+              if (explicitNip) parsed.nip = explicitNip;
+            }
+          }
+
           if (parsed.isHeader) continue;
 
           if (parsed.name && parsed.name.length >= 2) {

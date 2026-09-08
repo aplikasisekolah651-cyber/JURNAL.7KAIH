@@ -728,7 +728,7 @@ export const ParentDashboard: React.FC = () => {
                               </div>
                             );
                           }
-                          const studentRel = (vals.religion || currentStudent?.religion || 'Islam') as ReligionType;
+                          const studentRel = (currentStudent?.religion || vals.religion || 'Islam') as ReligionType;
                           const relConfig = getReligionConfig(studentRel);
 
                           return (

@@ -487,7 +487,7 @@ export class PDFReportGenerator {
 
       // 2. Beribadah (Keterlaksanaan sholat 5 waktu / ibadah pokok secara rapi dan bersih)
       const ib = j.habits?.ibadah;
-      const rel = (ib?.values?.religion || student.religion || 'Islam') as any;
+      const rel = (student.religion || ib?.values?.religion || 'Islam') as any;
       const worshipItems = getWorshipStatusList(rel, ib?.values);
       const executedWorshipCount = worshipItems.filter(p => p.isExecuted).length;
       
@@ -859,7 +859,7 @@ export class PDFReportGenerator {
     const bpDetailStr = bpLines.join('\n');
 
     // Format Habit 2: Beribadah
-    const rel = (ib?.values?.religion || student.religion || 'Islam') as any;
+    const rel = (student.religion || ib?.values?.religion || 'Islam') as any;
     const worshipItems = getWorshipStatusList(rel, ib?.values);
     const worshipLines: string[] = [];
     worshipLines.push(`• Ibadah Pokok (${rel}):`);

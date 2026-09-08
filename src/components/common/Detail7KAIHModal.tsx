@@ -47,7 +47,7 @@ export const Detail7KAIHModal: React.FC<Detail7KAIHModalProps> = ({
   const ist = habits.istirahat;
 
   // Religion info for Ibadah
-  const rel = (ib?.values?.religion || student?.religion || 'Islam') as ReligionType;
+  const rel = (student?.religion || ib?.values?.religion || 'Islam') as ReligionType;
   const relConfig = RELIGIONS_CONFIG[rel] || RELIGIONS_CONFIG.Islam;
   const worshipList = getWorshipStatusList(rel, ib?.values);
   const executedWorshipCount = worshipList.filter(p => p.isExecuted).length;

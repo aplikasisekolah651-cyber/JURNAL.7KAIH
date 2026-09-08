@@ -26,7 +26,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { useJournal } from '../../context/JournalContext';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth, normalizeClassName } from '../../context/AuthContext';
 import { useSchoolSettings } from '../../context/SchoolContext';
 import { JournalEntry, HabitId, User } from '../../types';
 import { HABIT_DEFINITIONS, getWorshipStatusList, isJournalParentValidated, formatDateDDMMYY } from '../../lib/constants';
@@ -145,16 +145,17 @@ export const AdminJournalMonitoring: React.FC = () => {
     const students = allUsers.filter(u => u.role === 'siswa');
     
     students.forEach(s => {
-      if (s.className && s.className.trim()) {
-        const cName = s.className.trim();
+      const cName = normalizeClassName(s.className);
+      if (cName) {
         classCountMap.set(cName, (classCountMap.get(cName) || 0) + 1);
       }
     });
 
     // Also include classes present in journals if not yet in map
     journals.forEach(j => {
-      if (j.className && j.className.trim() && !classCountMap.has(j.className.trim())) {
-        classCountMap.set(j.className.trim(), 0);
+      const cName = normalizeClassName(j.className);
+      if (cName && !classCountMap.has(cName)) {
+        classCountMap.set(cName, 0);
       }
     });
 
@@ -213,7 +214,7 @@ export const AdminJournalMonitoring: React.FC = () => {
   const filteredJournals = useMemo(() => {
     return journals.filter(j => {
       const studentUser = allUsers.find(u => u.id === j.studentId || u.name === j.studentName);
-      const studentClass = (j.className || studentUser?.className || '').trim();
+      const studentClass = normalizeClassName(j.className || studentUser?.className || '');
 
       // 1. Search Query (student name, nisn, nis, class)
       const q = searchQuery.toLowerCase().trim();
@@ -228,9 +229,7 @@ export const AdminJournalMonitoring: React.FC = () => {
 
       // 2. Class Filter (exact match on student's class or journal's class)
       if (selectedClass !== 'all') {
-        const targetClassLower = selectedClass.toLowerCase().trim();
-        const effectiveClassLower = studentClass.toLowerCase().trim();
-        if (effectiveClassLower !== targetClassLower && j.className?.toLowerCase().trim() !== targetClassLower) {
+        if (studentClass !== selectedClass) {
           return false;
         }
       }
