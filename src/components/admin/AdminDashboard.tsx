@@ -264,14 +264,18 @@ export const AdminDashboard: React.FC = () => {
 
   // Bulk Import States (Siswa)
   const [importText, setImportText] = useState(
-`23451, 01, Muhammad Faiz Al-Farisi, L, 7A, Bpk. Bambang Al-Farisi, 081234567810
-23452, 02, Siti Aisyah Nurhaliza, P, 7A, Ibu Nurhayati, 081234567811
-23453, 03, Rendy Pratama Putra, L, 7B, Bpk. Joko Susilo, 081234567812
-23454, 04, Dwi Lestari Ramadhani, P, 7B, Ibu Sri Mulyani, 081234567813
-23455, 05, Bagas Satria Yudha, L, 8A, Bpk. Tri Wibowo, 081234567814`
+`23451, 01, Ahmad Fauzan, L, Islam, 7A, Bpk. Fauzan, 081234567801
+23452, 02, Annisa Rahma, P, Islam, 7A, Ibu Rahma, 081234567802
+23453, 03, Bayu Kurniawan, L, Kristen, 7B, Bpk. Kurniawan, 081234567803
+23454, 04, Cinta Laura Santoso, P, Katolik, 7C, Ibu Laura, 081234567804
+23455, 05, Doni Pratama Putra, L, Hindu, 8A, Bpk. Pratama, 081234567805
+23456, 06, Eka Putri Lestari, P, Buddha, 8B, Ibu Lestari, 081234567806
+23457, 07, Farhan Ramadhan, L, Islam, 9A, Bpk. Ramadhan, 081234567807
+23458, 08, Grace Tanujaya, P, Konghucu, 9B, Bpk. Tanujaya, 081234567808`
   );
   const [importing, setImporting] = useState(false);
   const [importSuccessCount, setImportSuccessCount] = useState<number | null>(null);
+  const [showColumnGuideDetails, setShowColumnGuideDetails] = useState<boolean>(true);
 
   // Bulk Import States (Wali Kelas & Guru)
   const [teacherImportText, setTeacherImportText] = useState(
@@ -460,49 +464,88 @@ export const AdminDashboard: React.FC = () => {
     // Filter non-empty tokens
     const validTokens = rawParts.filter(p => p !== '' && p !== '-');
 
-    validTokens.forEach((token) => {
-      // 1. Phone number
-      if (!detectedPhone && isPhoneToken(token)) {
-        detectedPhone = token.replace(/[^0-9+]/g, '');
-        return;
-      }
+    // 1. Strict Positional Check for Standard Formats:
+    // Format 8 Kolom Resmi: [0: NIS, 1: No Absen, 2: Nama Siswa, 3: Jenis Kelamin, 4: Agama, 5: Kelas, 6: Nama Orang Tua, 7: No HP Ortu]
+    let isPositionalMatch = false;
 
-      // 2. Class name (e.g. 7A, 7B, 8A, 9F)
-      if (!detectedClass && isClassToken(token)) {
-        detectedClass = normalizeClassName(token);
-        return;
+    if (rawParts.length >= 8) {
+      const pGender = rawParts[3]?.trim();
+      const pRel = rawParts[4]?.trim();
+      const pClass = rawParts[5]?.trim();
+      if (isGenderToken(pGender) && (isReligionToken(pRel) || isClassToken(pClass))) {
+        isPositionalMatch = true;
+        detectedNis = rawParts[0].trim();
+        detectedAbsen = rawParts[1].trim();
+        if (rawParts[2]?.trim()) detectedNames.push(rawParts[2].trim());
+        detectedGender = normalizeGenderVal(pGender);
+        detectedReligion = normalizeReligionVal(pRel);
+        detectedClass = cleanAndFormatClassToken(pClass) || normalizeClassName(pClass);
+        if (rawParts[6]?.trim()) detectedNames.push(rawParts[6].trim());
+        if (rawParts[7]?.trim()) detectedPhone = rawParts[7].trim().replace(/[^0-9+]/g, '');
       }
+    } else if (rawParts.length === 7) {
+      // Format 7 Kolom (tanpa No Absen): [0: NIS, 1: Nama Siswa, 2: Jenis Kelamin, 3: Agama, 4: Kelas, 5: Nama Orang Tua, 6: No HP Ortu]
+      const pGender = rawParts[2]?.trim();
+      const pRel = rawParts[3]?.trim();
+      const pClass = rawParts[4]?.trim();
+      if (isGenderToken(pGender) && (isReligionToken(pRel) || isClassToken(pClass))) {
+        isPositionalMatch = true;
+        detectedNis = rawParts[0].trim();
+        if (rawParts[1]?.trim()) detectedNames.push(rawParts[1].trim());
+        detectedGender = normalizeGenderVal(pGender);
+        detectedReligion = normalizeReligionVal(pRel);
+        detectedClass = cleanAndFormatClassToken(pClass) || normalizeClassName(pClass);
+        if (rawParts[5]?.trim()) detectedNames.push(rawParts[5].trim());
+        if (rawParts[6]?.trim()) detectedPhone = rawParts[6].trim().replace(/[^0-9+]/g, '');
+      }
+    }
 
-      // 3. Gender (L / P)
-      if (!detectedGender && isGenderToken(token)) {
-        detectedGender = normalizeGenderVal(token);
-        return;
-      }
+    if (!isPositionalMatch) {
+      // Fallback: heuristic token classification across valid tokens
+      validTokens.forEach((token) => {
+        // 1. Phone number
+        if (!detectedPhone && isPhoneToken(token)) {
+          detectedPhone = token.replace(/[^0-9+]/g, '');
+          return;
+        }
 
-      // 4. Religion (Islam / Kristen / Katolik / Hindu / Buddha / Konghucu)
-      if (!detectedReligion && isReligionToken(token)) {
-        detectedReligion = normalizeReligionVal(token);
-        return;
-      }
+        // 2. Class name (e.g. 7A, 7B, 8A, 9F)
+        if (!detectedClass && isClassToken(token)) {
+          detectedClass = normalizeClassName(token);
+          return;
+        }
 
-      // 5. Absen number (1-2 digits, 1 to 50)
-      if (!detectedAbsen && /^\d{1,2}$/.test(token) && parseInt(token, 10) >= 1 && parseInt(token, 10) <= 60) {
-        detectedAbsen = token.padStart(2, '0');
-        return;
-      }
+        // 3. Gender (L / P)
+        if (!detectedGender && isGenderToken(token)) {
+          detectedGender = normalizeGenderVal(token);
+          return;
+        }
 
-      // 6. NIS (Numeric string 3-12 digits)
-      if (!detectedNis && /^\d{3,12}$/.test(token)) {
-        detectedNis = token;
-        return;
-      }
+        // 4. Religion (Islam / Kristen / Katolik / Hindu / Buddha / Konghucu)
+        if (!detectedReligion && isReligionToken(token)) {
+          detectedReligion = normalizeReligionVal(token);
+          return;
+        }
 
-      // 7. Text Names (Student Name / Parent Name)
-      // If it contains alphabetic characters and is not a gender, class, or religion token
-      if (/[a-zA-Z]/.test(token) && token.length >= 2 && !isGenderToken(token) && !isClassToken(token) && !isReligionToken(token)) {
-        detectedNames.push(token);
-      }
-    });
+        // 5. Absen number (1-2 digits, 1 to 50)
+        if (!detectedAbsen && /^\d{1,2}$/.test(token) && parseInt(token, 10) >= 1 && parseInt(token, 10) <= 60) {
+          detectedAbsen = token.padStart(2, '0');
+          return;
+        }
+
+        // 6. NIS (Numeric string 3-12 digits)
+        if (!detectedNis && /^\d{3,12}$/.test(token)) {
+          detectedNis = token;
+          return;
+        }
+
+        // 7. Text Names (Student Name / Parent Name)
+        // If it contains alphabetic characters and is not a gender, class, or religion token
+        if (/[a-zA-Z]/.test(token) && token.length >= 2 && !isGenderToken(token) && !isClassToken(token) && !isReligionToken(token)) {
+          detectedNames.push(token);
+        }
+      });
+    }
 
     // Resolve Student & Parent Names
     let finalStudentName = '';
@@ -1167,9 +1210,9 @@ export const AdminDashboard: React.FC = () => {
       "23453,03,Bayu Kurniawan,L,Kristen,7B,Bpk. Kurniawan,081234567803\n" +
       "23454,04,Cinta Laura Santoso,P,Katolik,7C,Ibu Laura,081234567804\n" +
       "23455,05,Doni Pratama Putra,L,Hindu,8A,Bpk. Pratama,081234567805\n" +
-      "23456,06,Eka Putri Lestari,P,Islam,8B,Ibu Lestari,081234567806\n" +
+      "23456,06,Eka Putri Lestari,P,Buddha,8B,Ibu Lestari,081234567806\n" +
       "23457,07,Farhan Ramadhan,L,Islam,9A,Bpk. Ramadhan,081234567807\n" +
-      "23458,08,Gita Permata Sari,P,Islam,9B,Ibu Permata,081234567808";
+      "23458,08,Grace Tanujaya,P,Konghucu,9B,Bpk. Tanujaya,081234567808";
     
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -1190,9 +1233,9 @@ export const AdminDashboard: React.FC = () => {
       ['23453', '03', 'Bayu Kurniawan', 'L', 'Kristen', '7B', 'Bpk. Kurniawan', '081234567803'],
       ['23454', '04', 'Cinta Laura Santoso', 'P', 'Katolik', '7C', 'Ibu Laura', '081234567804'],
       ['23455', '05', 'Doni Pratama Putra', 'L', 'Hindu', '8A', 'Bpk. Pratama', '081234567805'],
-      ['23456', '06', 'Eka Putri Lestari', 'P', 'Islam', '8B', 'Ibu Lestari', '081234567806'],
+      ['23456', '06', 'Eka Putri Lestari', 'P', 'Buddha', '8B', 'Ibu Lestari', '081234567806'],
       ['23457', '07', 'Farhan Ramadhan', 'L', 'Islam', '9A', 'Bpk. Ramadhan', '081234567807'],
-      ['23458', '08', 'Gita Permata Sari', 'P', 'Islam', '9B', 'Ibu Permata', '081234567808']
+      ['23458', '08', 'Grace Tanujaya', 'P', 'Konghucu', '9B', 'Bpk. Tanujaya', '081234567808']
     ];
     
     // Explicitly treat strings as text to protect leading zeros ('01', '0812...')
@@ -1330,6 +1373,32 @@ export const AdminDashboard: React.FC = () => {
 
           // If explicit column mapping exists, override specific parsed tokens
           if (headerRowIdx >= 0) {
+            if (colMap['nis'] !== undefined) {
+              const explicitNis = cleanExcelCellValue(row[colMap['nis']]);
+              if (explicitNis) parsed.nis = explicitNis;
+            }
+            if (colMap['absen'] !== undefined) {
+              const explicitAbsen = cleanExcelCellValue(row[colMap['absen']]);
+              if (explicitAbsen) parsed.noAbsen = explicitAbsen.padStart(2, '0');
+            }
+            if (colMap['name'] !== undefined) {
+              const explicitName = cleanExcelCellValue(row[colMap['name']]);
+              if (explicitName) parsed.name = explicitName;
+            }
+            if (colMap['gender'] !== undefined) {
+              const explicitGender = cleanExcelCellValue(row[colMap['gender']]);
+              if (explicitGender) {
+                const normG = normalizeGenderVal(explicitGender);
+                if (normG) parsed.gender = normG;
+              }
+            }
+            if (colMap['religion'] !== undefined) {
+              const explicitRel = cleanExcelCellValue(row[colMap['religion']]);
+              if (explicitRel) {
+                const normRel = normalizeReligionVal(explicitRel);
+                if (normRel) parsed.religion = normRel;
+              }
+            }
             if (colMap['class'] !== undefined) {
               const explicitClass = cleanExcelCellValue(row[colMap['class']]);
               if (explicitClass) {
@@ -1337,13 +1406,13 @@ export const AdminDashboard: React.FC = () => {
                 if (normalizedCls) parsed.className = normalizedCls;
               }
             }
-            if (colMap['name'] !== undefined) {
-              const explicitName = cleanExcelCellValue(row[colMap['name']]);
-              if (explicitName) parsed.name = explicitName;
+            if (colMap['parentName'] !== undefined) {
+              const explicitPName = cleanExcelCellValue(row[colMap['parentName']]);
+              if (explicitPName) parsed.parentName = explicitPName;
             }
-            if (colMap['nis'] !== undefined) {
-              const explicitNis = cleanExcelCellValue(row[colMap['nis']]);
-              if (explicitNis) parsed.nis = explicitNis;
+            if (colMap['parentPhone'] !== undefined) {
+              const explicitPPhone = cleanExcelCellValue(row[colMap['parentPhone']]);
+              if (explicitPPhone) parsed.parentPhone = explicitPPhone;
             }
           }
 
@@ -1382,9 +1451,9 @@ export const AdminDashboard: React.FC = () => {
 23453, 03, Bayu Kurniawan, L, Kristen, 7B, Bpk. Kurniawan, 081234567803
 23454, 04, Cinta Laura Santoso, P, Katolik, 7C, Ibu Laura, 081234567804
 23455, 05, Doni Pratama Putra, L, Hindu, 8A, Bpk. Pratama, 081234567805
-23456, 06, Eka Putri Lestari, P, Islam, 8B, Ibu Lestari, 081234567806
+23456, 06, Eka Putri Lestari, P, Buddha, 8B, Ibu Lestari, 081234567806
 23457, 07, Farhan Ramadhan, L, Islam, 9A, Bpk. Ramadhan, 081234567807
-23458, 08, Gita Permata Sari, P, Islam, 9B, Ibu Permata, 081234567808`
+23458, 08, Grace Tanujaya, P, Konghucu, 9B, Bpk. Tanujaya, 081234567808`
     );
     setImportSuccessCount(null);
   };
@@ -3023,19 +3092,28 @@ export const AdminDashboard: React.FC = () => {
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200 text-xs font-bold">
                   <FileSpreadsheet className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span>Format Standar 8 Kolom Data Siswa (Termasuk Agama):</span>
+                  <span>Format Standar 8 Kolom Data Siswa (Urutan Wajib):</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText("NIS,No Absen,Nama Siswa,Jenis Kelamin (L/P),Agama,Kelas,Nama Orang Tua,No HP Orang Tua");
-                    alert('Format header kolom berhasil disalin ke clipboard!');
-                  }}
-                  className="inline-flex items-center gap-1 text-[11px] text-purple-700 dark:text-purple-300 hover:text-purple-900 font-semibold bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-800 shadow-2xs hover:bg-purple-50 transition-all cursor-pointer"
-                >
-                  <Copy className="w-3 h-3" />
-                  <span>Salin Header Kolom</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowColumnGuideDetails(prev => !prev)}
+                    className="inline-flex items-center gap-1 text-[11px] text-purple-700 dark:text-purple-300 hover:text-purple-900 font-semibold bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-800 shadow-2xs hover:bg-purple-50 transition-all cursor-pointer"
+                  >
+                    <span>{showColumnGuideDetails ? 'Sembunyikan Tabel Panduan' : 'Lihat Penjelasan Kolom'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText("NIS,No Absen,Nama Siswa,Jenis Kelamin (L/P),Agama,Kelas,Nama Orang Tua,No HP Orang Tua");
+                      alert('Format header kolom berhasil disalin ke clipboard!');
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] text-purple-700 dark:text-purple-300 hover:text-purple-900 font-semibold bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-800 shadow-2xs hover:bg-purple-50 transition-all cursor-pointer"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Salin Header Kolom</span>
+                  </button>
+                </div>
               </div>
 
               {/* 8 Columns Visual Badges */}
@@ -3050,13 +3128,13 @@ export const AdminDashboard: React.FC = () => {
                   3. Nama Siswa <span className="text-rose-500">*</span>
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-sky-700 dark:text-sky-300 shadow-2xs">
-                  4. JK (L/P)
+                  4. Jenis Kelamin (L/P) <span className="text-rose-500">*</span>
                 </span>
-                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 shadow-2xs">
-                  5. Agama
+                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 shadow-2xs bg-emerald-50/50">
+                  5. Agama <span className="text-rose-500">*</span>
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-blue-700 dark:text-blue-300 shadow-2xs">
-                  6. Kelas (7A-9F)
+                  6. Kelas <span className="text-rose-500">*</span>
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-rose-700 dark:text-rose-300 shadow-2xs">
                   7. Nama Orang Tua
@@ -3065,6 +3143,81 @@ export const AdminDashboard: React.FC = () => {
                   8. No HP Ortu (WA)
                 </span>
               </div>
+
+              {/* Explanatory Table for 8 Columns */}
+              {showColumnGuideDetails && (
+                <div className="overflow-x-auto rounded-lg border border-purple-200 dark:border-purple-800/80 bg-white dark:bg-slate-900">
+                  <table className="w-full text-[11px] text-left">
+                    <thead className="bg-purple-100/70 dark:bg-purple-950/80 text-purple-950 dark:text-purple-200 font-bold border-b border-purple-200 dark:border-purple-800">
+                      <tr>
+                        <th className="py-1.5 px-2.5 w-10 text-center">No</th>
+                        <th className="py-1.5 px-2.5">Nama Kolom Header</th>
+                        <th className="py-1.5 px-2.5">Sifat</th>
+                        <th className="py-1.5 px-2.5">Format / Pilihan Valid</th>
+                        <th className="py-1.5 px-2.5">Fungsi & Otomatisasi Sistem</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-purple-100 dark:divide-purple-900/40 text-slate-700 dark:text-slate-300">
+                      <tr className="hover:bg-purple-50/50 dark:hover:bg-purple-950/30">
+                        <td className="py-1.5 px-2.5 text-center font-bold text-purple-700 dark:text-purple-400">1</td>
+                        <td className="py-1.5 px-2.5 font-bold font-mono">NIS</td>
+                        <td className="py-1.5 px-2.5"><span className="text-rose-600 font-bold">Wajib</span></td>
+                        <td className="py-1.5 px-2.5">Angka / Teks unik (cth: <code>23451</code>)</td>
+                        <td className="py-1.5 px-2.5">Username Login Siswa: <code>[NIS]</code> | Password: <code>siswa[NIS]</code></td>
+                      </tr>
+                      <tr className="hover:bg-purple-50/50 dark:hover:bg-purple-950/30">
+                        <td className="py-1.5 px-2.5 text-center font-bold text-purple-700 dark:text-purple-400">2</td>
+                        <td className="py-1.5 px-2.5 font-bold font-mono">No Absen</td>
+                        <td className="py-1.5 px-2.5"><span className="text-slate-500 font-medium">Dianjurkan</span></td>
+                        <td className="py-1.5 px-2.5">2 digit (cth: <code>01</code>, <code>02</code>, dst.)</td>
+                        <td className="py-1.5 px-2.5">Nomor urut presensi di daftar kelas & laporan rapor</td>
+                      </tr>
+                      <tr className="hover:bg-purple-50/50 dark:hover:bg-purple-950/30">
+                        <td className="py-1.5 px-2.5 text-center font-bold text-purple-700 dark:text-purple-400">3</td>
+                        <td className="py-1.5 px-2.5 font-bold font-mono">Nama Siswa</td>
+                        <td className="py-1.5 px-2.5"><span className="text-rose-600 font-bold">Wajib</span></td>
+                        <td className="py-1.5 px-2.5">Nama lengkap resmi siswa</td>
+                        <td className="py-1.5 px-2.5">Nama akun profil siswa, sertifikat, dan rekap evaluasi</td>
+                      </tr>
+                      <tr className="hover:bg-purple-50/50 dark:hover:bg-purple-950/30">
+                        <td className="py-1.5 px-2.5 text-center font-bold text-purple-700 dark:text-purple-400">4</td>
+                        <td className="py-1.5 px-2.5 font-bold font-mono">Jenis Kelamin (L/P)</td>
+                        <td className="py-1.5 px-2.5"><span className="text-rose-600 font-bold">Wajib</span></td>
+                        <td className="py-1.5 px-2.5"><code>L</code> (Laki-laki) atau <code>P</code> (Perempuan)</td>
+                        <td className="py-1.5 px-2.5">Menentukan avatar profil siswa (Putra / Putri)</td>
+                      </tr>
+                      <tr className="hover:bg-emerald-50/60 dark:hover:bg-emerald-950/30 bg-emerald-50/30">
+                        <td className="py-1.5 px-2.5 text-center font-bold text-emerald-700 dark:text-emerald-400">5</td>
+                        <td className="py-1.5 px-2.5 font-bold font-mono text-emerald-800 dark:text-emerald-300">Agama</td>
+                        <td className="py-1.5 px-2.5"><span className="text-emerald-700 font-bold">Wajib</span></td>
+                        <td className="py-1.5 px-2.5 font-medium"><code>Islam</code>, <code>Kristen</code>, <code>Katolik</code>, <code>Hindu</code>, <code>Buddha</code>, <code>Konghucu</code></td>
+                        <td className="py-1.5 px-2.5 text-emerald-900 dark:text-emerald-200"><strong>Otomatis mengunci & memunculkan butir ibadah 7 KAIH</strong> yang sesuai agama siswa saat pengisian jurnal</td>
+                      </tr>
+                      <tr className="hover:bg-purple-50/50 dark:hover:bg-purple-950/30">
+                        <td className="py-1.5 px-2.5 text-center font-bold text-purple-700 dark:text-purple-400">6</td>
+                        <td className="py-1.5 px-2.5 font-bold font-mono">Kelas</td>
+                        <td className="py-1.5 px-2.5"><span className="text-rose-600 font-bold">Wajib</span></td>
+                        <td className="py-1.5 px-2.5">Format: <code>7A</code>, <code>7B</code>, <code>8A</code>, <code>9B</code>, dll.</td>
+                        <td className="py-1.5 px-2.5">Menghubungkan siswa ke Wali Kelas & filter rombel</td>
+                      </tr>
+                      <tr className="hover:bg-purple-50/50 dark:hover:bg-purple-950/30">
+                        <td className="py-1.5 px-2.5 text-center font-bold text-purple-700 dark:text-purple-400">7</td>
+                        <td className="py-1.5 px-2.5 font-bold font-mono">Nama Orang Tua</td>
+                        <td className="py-1.5 px-2.5"><span className="text-slate-500 font-medium">Opsional</span></td>
+                        <td className="py-1.5 px-2.5">Nama Ayah / Ibu / Wali</td>
+                        <td className="py-1.5 px-2.5">Username Login Ortu: <code>ortu.[NIS]</code> | Password: <code>ortu[NIS]</code></td>
+                      </tr>
+                      <tr className="hover:bg-purple-50/50 dark:hover:bg-purple-950/30">
+                        <td className="py-1.5 px-2.5 text-center font-bold text-purple-700 dark:text-purple-400">8</td>
+                        <td className="py-1.5 px-2.5 font-bold font-mono">No HP Orang Tua</td>
+                        <td className="py-1.5 px-2.5"><span className="text-slate-500 font-medium">Opsional</span></td>
+                        <td className="py-1.5 px-2.5">Format: <code>081234567801</code> atau <code>62812...</code></td>
+                        <td className="py-1.5 px-2.5">Nomor WhatsApp untuk pengiriman rekap login & konsultasi</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 space-y-1">
                 <p className="font-mono text-[11px] text-purple-950 dark:text-purple-200 overflow-x-auto whitespace-nowrap">
@@ -3106,7 +3259,7 @@ export const AdminDashboard: React.FC = () => {
                 rows={5}
                 value={importText}
                 onChange={(e) => setImportText(e.target.value)}
-                placeholder="23451, 01, Muhammad Faiz, L, 7A, Bpk. Bambang, 081234567810"
+                placeholder="23451, 01, Ahmad Fauzan, L, Islam, 7A, Bpk. Fauzan, 081234567801"
                 className="w-full p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-purple-500 resize-none shadow-inner"
               />
 
