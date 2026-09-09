@@ -13,6 +13,7 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { HABIT_LIST } from './lib/constants';
 import { HabitIcon } from './components/common/HabitIcon';
 import { BellRing, X, Check, ShieldCheck, Heart, Sparkles } from 'lucide-react';
+import { FirestoreQuotaBanner } from './components/common/FirestoreQuotaBanner';
 
 const MainLayout: React.FC = () => {
   const { currentUser, isAuthenticated } = useAuth();
@@ -92,7 +93,12 @@ const MainLayout: React.FC = () => {
   }, [routeInfo, isAuthenticated, currentUser, schoolSettings]);
 
   if (!isAuthenticated || !currentUser) {
-    return <LoginScreen />;
+    return (
+      <>
+        <FirestoreQuotaBanner />
+        <LoginScreen />
+      </>
+    );
   }
 
   const activeHabitDef = activeReminderHabit 
@@ -101,6 +107,7 @@ const MainLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200">
+      <FirestoreQuotaBanner />
       {/* Top Navigation Header */}
       <Header onSelectDate={(d) => setSelectedStudentDate(d)} />
 

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SchoolSettings } from '../types';
 import { DEFAULT_SCHOOL_SETTINGS } from '../lib/constants';
-import { db } from '../lib/firebase';
+import { db, safeFirestoreWrite, isFirestoreQuotaExceeded, markFirestoreQuotaExceeded } from '../lib/firebase';
 import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 
 interface SchoolContextType {
@@ -54,24 +54,32 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const settingsDocRef = doc(db, 'settings', 'school');
 
     // 1. Immediate direct fetch from Cloud Firestore Database
-    getDoc(settingsDocRef)
-      .then((docSnap) => {
-        if (isMounted) {
-          if (docSnap.exists()) {
-            const data = docSnap.data() as Partial<SchoolSettings>;
-            setSchoolSettings(prev => ({
-              ...prev,
-              ...data
-            }));
-            setIsSyncedWithDb(true);
+    if (!isFirestoreQuotaExceeded()) {
+      getDoc(settingsDocRef)
+        .then((docSnap) => {
+          if (isMounted) {
+            if (docSnap.exists()) {
+              const data = docSnap.data() as Partial<SchoolSettings>;
+              setSchoolSettings(prev => ({
+                ...prev,
+                ...data
+              }));
+              setIsSyncedWithDb(true);
+            }
+            setIsLoadingFromDb(false);
           }
-          setIsLoadingFromDb(false);
-        }
-      })
-      .catch((err) => {
-        console.warn('Firestore school settings initial fetch notice:', err);
-        if (isMounted) setIsLoadingFromDb(false);
-      });
+        })
+        .catch((err) => {
+          const msg = err?.message || String(err);
+          if (msg.includes('resource-exhausted') || msg.includes('Quota limit exceeded') || msg.includes('quota')) {
+            markFirestoreQuotaExceeded(msg);
+          }
+          console.warn('Firestore school settings initial fetch notice:', err);
+          if (isMounted) setIsLoadingFromDb(false);
+        });
+    } else {
+      setIsLoadingFromDb(false);
+    }
 
     // 2. Real-time onSnapshot listener across all open devices
     try {
@@ -88,6 +96,10 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setIsLoadingFromDb(false);
         }
       }, (err) => {
+        const msg = err?.message || String(err);
+        if (msg.includes('resource-exhausted') || msg.includes('Quota limit exceeded') || msg.includes('quota')) {
+          markFirestoreQuotaExceeded(msg);
+        }
         console.warn('Firestore school settings real-time listener notice:', err);
         if (isMounted) setIsLoadingFromDb(false);
       });
@@ -116,15 +128,12 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // 2. Persist to Firestore Cloud Database
     if (db) {
-      try {
+      const success = await safeFirestoreWrite(async () => {
         const settingsDocRef = doc(db, 'settings', 'school');
         await setDoc(settingsDocRef, updates, { merge: true });
         setIsSyncedWithDb(true);
-        return true;
-      } catch (e) {
-        console.error('Firestore school settings save error:', e);
-        return false;
-      }
+      });
+      return success;
     }
     return true;
   };
@@ -145,13 +154,11 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.warn('Local storage remove warning:', e);
     }
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         const settingsDocRef = doc(db, 'settings', 'school');
         await setDoc(settingsDocRef, DEFAULT_SCHOOL_SETTINGS);
         setIsSyncedWithDb(true);
-      } catch (e) {
-        console.warn('Firestore school settings reset notice:', e);
-      }
+      });
     }
   };
 

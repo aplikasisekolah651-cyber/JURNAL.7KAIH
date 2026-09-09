@@ -12,7 +12,7 @@ import { DEFAULT_REMINDERS, HABIT_LIST, isJournalParentValidated, calculateJourn
 import { getDateString } from '../lib/mockData';
 import { audioNotifier } from '../lib/audioNotifier';
 import { E2EEService } from '../lib/crypto';
-import { db, cleanForFirestore } from '../lib/firebase';
+import { db, cleanForFirestore, safeFirestoreWrite, isFirestoreQuotaExceeded, markFirestoreQuotaExceeded } from '../lib/firebase';
 import { collection, setDoc, doc, onSnapshot, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { getDeletedUserIds } from './AuthContext';
 
@@ -271,24 +271,30 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let isMounted = true;
     const journalsColRef = collection(db, 'journals');
 
-    // 1. Direct initial fetch for instant cross-device visibility
-    getDocs(journalsColRef).then((snapshot) => {
-      if (!isMounted) return;
-      const deletedIds = getDeletedJournalIds();
-      const deletedUserIds = getDeletedUserIds();
-      if (!snapshot.empty) {
-        const firestoreJournals: JournalEntry[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data() as any;
-          if (!deletedIds.has(docSnap.id) && !deletedUserIds.has(data.studentId)) {
-            firestoreJournals.push({ id: docSnap.id, ...data });
-          }
-        });
-        setJournals(firestoreJournals.sort((a, b) => ((b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))));
-      }
-    }).catch(err => {
-      console.warn('Firestore journals direct fetch notice:', err);
-    });
+    // 1. Direct initial fetch for instant cross-device visibility (skip if quota exceeded)
+    if (!isFirestoreQuotaExceeded()) {
+      getDocs(journalsColRef).then((snapshot) => {
+        if (!isMounted) return;
+        const deletedIds = getDeletedJournalIds();
+        const deletedUserIds = getDeletedUserIds();
+        if (!snapshot.empty) {
+          const firestoreJournals: JournalEntry[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as any;
+            if (!deletedIds.has(docSnap.id) && !deletedUserIds.has(data.studentId)) {
+              firestoreJournals.push({ id: docSnap.id, ...data });
+            }
+          });
+          setJournals(firestoreJournals.sort((a, b) => ((b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))));
+        }
+      }).catch(err => {
+        const msg = err?.message || String(err);
+        if (msg.includes('resource-exhausted') || msg.includes('Quota limit exceeded') || msg.includes('quota')) {
+          markFirestoreQuotaExceeded(msg);
+        }
+        console.warn('Firestore journals direct fetch notice:', err);
+      });
+    }
 
     // 2. Real-time snapshot listener
     try {
@@ -307,6 +313,10 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setJournals(firestoreJournals.sort((a, b) => ((b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))));
         }
       }, (err) => {
+        const msg = err?.message || String(err);
+        if (msg.includes('resource-exhausted') || msg.includes('Quota limit exceeded') || msg.includes('quota')) {
+          markFirestoreQuotaExceeded(msg);
+        }
         console.warn('Firestore journals listener notice:', err);
       });
       return () => {
@@ -467,11 +477,9 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // Attempt cloud firestore write
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         await setDoc(doc(db, 'journals', entryId), cleanForFirestore(fullEntry));
-      } catch (e) {
-        console.warn('Firestore journal write fallback:', e);
-      }
+      });
     }
 
     return fullEntry;
@@ -542,11 +550,9 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         await setDoc(doc(db, 'journals', journalId), cleanForFirestore(updated), { merge: true });
-      } catch (e) {
-        console.warn('Firestore parent validation sync:', e);
-      }
+      });
     }
   };
 
@@ -602,11 +608,9 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     broadcastJournalUpdate(updated);
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         await setDoc(doc(db, 'journals', journalId), cleanForFirestore(updated), { merge: true });
-      } catch (e) {
-        console.warn('Firestore habit parent verify sync:', e);
-      }
+      });
     }
   };
 
@@ -659,11 +663,9 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     broadcastJournalUpdate(updated);
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         await setDoc(doc(db, 'journals', journalId), cleanForFirestore(updated), { merge: true });
-      } catch (e) {
-        console.warn('Firestore batch parent verify sync:', e);
-      }
+      });
     }
   };
 
@@ -704,11 +706,9 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         await setDoc(doc(db, 'journals', journalId), cleanForFirestore(updated), { merge: true });
-      } catch (e) {
-        console.warn('Firestore teacher feedback sync:', e);
-      }
+      });
     }
   };
 
@@ -721,11 +721,9 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         await deleteDoc(doc(db, 'journals', journalId));
-      } catch (e) {
-        console.warn('Firestore delete journal sync:', e);
-      }
+      });
     }
   };
 
@@ -740,15 +738,13 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         const batch = writeBatch(db);
         journalIds.forEach(id => {
           batch.delete(doc(db, 'journals', id));
         });
         await batch.commit();
-      } catch (e) {
-        console.warn('Firestore bulk delete journal sync:', e);
-      }
+      });
     }
   };
 
@@ -780,7 +776,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // Permanently delete matching journals from Firestore
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         const journalsSnapshot = await getDocs(collection(db, 'journals'));
         const batchList: Promise<void>[] = [];
         let currentBatch = writeBatch(db);
@@ -805,9 +801,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (batchList.length > 0) {
           await Promise.all(batchList);
         }
-      } catch (e) {
-        console.warn('Firestore deleteJournalsByStudentIds sync error:', e);
-      }
+      });
     }
   };
 
@@ -835,7 +829,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // 2. Query Firestore and delete all orphaned/deleted journals
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         const snapshot = await getDocs(collection(db, 'journals'));
         const batchList: Promise<void>[] = [];
         let currentBatch = writeBatch(db);
@@ -864,9 +858,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (batchList.length > 0) {
           await Promise.all(batchList);
         }
-      } catch (e) {
-        console.warn('Firestore purgeOrphanedJournals error:', e);
-      }
+      });
     }
 
     return { deletedCount: count };
@@ -885,16 +877,14 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.warn('Local storage clear error:', e);
     }
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         const querySnapshot = await getDocs(collection(db, 'journals'));
         const batch = writeBatch(db);
         querySnapshot.forEach((docSnap) => {
           batch.delete(doc(db, 'journals', docSnap.id));
         });
         await batch.commit();
-      } catch (e) {
-        console.warn('Firestore clear all journals sync:', e);
-      }
+      });
     }
   };
 

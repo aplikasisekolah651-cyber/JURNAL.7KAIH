@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { DEMO_USERS } from '../lib/constants';
 import { E2EEService } from '../lib/crypto';
-import { db, cleanForFirestore } from '../lib/firebase';
+import { db, cleanForFirestore, safeFirestoreWrite, isFirestoreQuotaExceeded, markFirestoreQuotaExceeded, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, getDocs, doc, setDoc, deleteDoc, onSnapshot, writeBatch } from 'firebase/firestore';
 import { 
   getUserAvatarUrl, 
@@ -429,57 +429,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem(AUTH_SESSION_KEY);
       }
 
-      // 4. Cloud Firestore thorough purge for target deleted records
-      if (db) {
-        const purgeFirestore = async () => {
-          try {
-            // Delete target document IDs directly
-            const batch = writeBatch(db);
-            PURGED_USER_IDS.forEach(uid => {
-              batch.delete(doc(db, 'users', uid));
+      // 4. Cloud Firestore thorough purge for target deleted records (run only once and if quota not exceeded)
+      if (db && !isFirestoreQuotaExceeded()) {
+        const hasPurged = localStorage.getItem('has_purged_firestore_v4');
+        if (!hasPurged) {
+          localStorage.setItem('has_purged_firestore_v4', 'true');
+          const purgeFirestore = async () => {
+            await safeFirestoreWrite(async () => {
+              // Delete target document IDs directly
+              const batch = writeBatch(db);
+              PURGED_USER_IDS.forEach(uid => {
+                batch.delete(doc(db, 'users', uid));
+              });
+              await batch.commit();
+
+              // Query users collection to catch any docs matching names or NIS
+              const userDocs = await getDocs(collection(db, 'users'));
+              if (!userDocs.empty) {
+                const uBatch = writeBatch(db);
+                let uCount = 0;
+                userDocs.forEach(d => {
+                  const data = d.data();
+                  if (isTargetPurgedUser({ id: d.id, ...data })) {
+                    uBatch.delete(doc(db, 'users', d.id));
+                    uCount++;
+                  }
+                });
+                if (uCount > 0) {
+                  await uBatch.commit();
+                  console.log(`[Firestore] Cleaned up ${uCount} purged user docs.`);
+                }
+              }
+
+              // Query journals collection to cascade delete entries belonging to purged students
+              const journalDocs = await getDocs(collection(db, 'journals'));
+              if (!journalDocs.empty) {
+                const jBatch = writeBatch(db);
+                let jCount = 0;
+                journalDocs.forEach(jd => {
+                  const jData = jd.data();
+                  if (PURGED_USER_IDS.has(jData.studentId) || PURGED_IDENTIFIERS.has(jData.studentId)) {
+                    jBatch.delete(doc(db, 'journals', jd.id));
+                    jCount++;
+                  }
+                });
+                if (jCount > 0) {
+                  await jBatch.commit();
+                  console.log(`[Firestore] Cleaned up ${jCount} purged journal docs.`);
+                }
+              }
             });
-            await batch.commit();
-
-            // Query users collection to catch any docs matching names or NIS
-            const userDocs = await getDocs(collection(db, 'users'));
-            if (!userDocs.empty) {
-              const uBatch = writeBatch(db);
-              let uCount = 0;
-              userDocs.forEach(d => {
-                const data = d.data();
-                if (isTargetPurgedUser({ id: d.id, ...data })) {
-                  uBatch.delete(doc(db, 'users', d.id));
-                  uCount++;
-                }
-              });
-              if (uCount > 0) {
-                await uBatch.commit();
-                console.log(`[Firestore] Cleaned up ${uCount} purged user docs.`);
-              }
-            }
-
-            // Query journals collection to cascade delete entries belonging to purged students
-            const journalDocs = await getDocs(collection(db, 'journals'));
-            if (!journalDocs.empty) {
-              const jBatch = writeBatch(db);
-              let jCount = 0;
-              journalDocs.forEach(jd => {
-                const jData = jd.data();
-                if (PURGED_USER_IDS.has(jData.studentId) || PURGED_IDENTIFIERS.has(jData.studentId)) {
-                  jBatch.delete(doc(db, 'journals', jd.id));
-                  jCount++;
-                }
-              });
-              if (jCount > 0) {
-                await jBatch.commit();
-                console.log(`[Firestore] Cleaned up ${jCount} purged journal docs.`);
-              }
-            }
-          } catch (cloudErr) {
-            console.warn('[Firestore] Purge notice:', cloudErr);
-          }
-        };
-        purgeFirestore();
+          };
+          purgeFirestore();
+        }
       }
     } catch (err) {
       console.warn('Initial cleanup error:', err);
@@ -505,13 +507,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e) {
         console.warn('LocalStorage sync parent warning:', e);
       }
-      if (db) {
+      if (db && !isFirestoreQuotaExceeded()) {
         const parents = updatedUsers.filter(u => u.role === 'orangtua');
-        const batch = writeBatch(db);
-        parents.forEach(p => {
-          batch.set(doc(db, 'users', p.id), cleanForFirestore(p), { merge: true });
-        });
-        batch.commit().catch(e => console.warn('Sync consistent parents to cloud warning:', e));
+        safeFirestoreWrite(async () => {
+          const batch = writeBatch(db);
+          parents.forEach(p => {
+            batch.set(doc(db, 'users', p.id), cleanForFirestore(p), { merge: true });
+          });
+          await batch.commit();
+        }).catch(e => console.warn('Sync consistent parents to cloud warning:', e));
       }
     }
   }, []);
@@ -558,20 +562,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return updatedUsers;
   };
 
-  // Seed default demo users to Firestore if collection is empty
+  // Seed default demo users to Firestore if collection is empty (guard with quota & local cache)
   const seedDemoUsersToFirestore = async () => {
-    if (!db) return;
+    if (!db || isFirestoreQuotaExceeded()) return;
     try {
+      const alreadySeeded = localStorage.getItem('demo_users_seeded_v3');
+      if (alreadySeeded) return;
+      localStorage.setItem('demo_users_seeded_v3', 'true');
+
       const deletedIds = getDeletedUserIds();
       const nonDeletedDemoUsers = DEMO_USERS.filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u));
       if (nonDeletedDemoUsers.length === 0) return;
 
-      const batch = writeBatch(db);
-      nonDeletedDemoUsers.forEach(u => {
-        batch.set(doc(db, 'users', u.id), cleanForFirestore(u));
+      await safeFirestoreWrite(async () => {
+        const batch = writeBatch(db);
+        nonDeletedDemoUsers.forEach(u => {
+          batch.set(doc(db, 'users', u.id), cleanForFirestore(u));
+        });
+        await batch.commit();
+        console.log('Seeded initial DEMO_USERS to Cloud Firestore');
       });
-      await batch.commit();
-      console.log('Seeded initial DEMO_USERS to Cloud Firestore');
     } catch (err) {
       console.warn('Error seeding demo users to Firestore:', err);
     }
@@ -584,29 +594,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
     const usersColRef = collection(db, 'users');
 
-    // 1. Immediate direct fetch from Firestore
-    getDocs(usersColRef).then((snapshot) => {
-      if (!isMounted) return;
-      const deletedIds = getDeletedUserIds();
-      if (!snapshot.empty) {
-        const firestoreUsers: User[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          const candidate = { id: docSnap.id, ...(data as any) };
-          if (!deletedIds.has(docSnap.id) && !isTargetPurgedUser(candidate)) {
-            firestoreUsers.push(candidate);
+    // 1. Immediate direct fetch from Firestore (skip if quota is known to be exceeded)
+    if (!isFirestoreQuotaExceeded()) {
+      getDocs(usersColRef).then((snapshot) => {
+        if (!isMounted) return;
+        const deletedIds = getDeletedUserIds();
+        if (!snapshot.empty) {
+          const firestoreUsers: User[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const candidate = { id: docSnap.id, ...(data as any) };
+            if (!deletedIds.has(docSnap.id) && !isTargetPurgedUser(candidate)) {
+              firestoreUsers.push(candidate);
+            }
+          });
+          if (firestoreUsers.length > 0) {
+            setAllUsers(prev => mergeFirestoreUsers(prev, firestoreUsers));
           }
-        });
-        if (firestoreUsers.length > 0) {
-          setAllUsers(prev => mergeFirestoreUsers(prev, firestoreUsers));
+        } else {
+          // Firestore is empty: auto-seed demo accounts so they work across all devices
+          seedDemoUsersToFirestore();
         }
-      } else {
-        // Firestore is empty: auto-seed demo accounts so they work across all devices
-        seedDemoUsersToFirestore();
-      }
-    }).catch((err) => {
-      console.warn('Firestore users direct fetch notice:', err);
-    });
+      }).catch((err) => {
+        const msg = err?.message || String(err);
+        if (msg.includes('resource-exhausted') || msg.includes('Quota limit exceeded') || msg.includes('quota')) {
+          markFirestoreQuotaExceeded(msg);
+        }
+        console.warn('Firestore users direct fetch notice:', err);
+      });
+    }
 
     // 2. Real-time snapshot listener across all connected devices
     try {
@@ -625,6 +641,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setAllUsers(prev => mergeFirestoreUsers(prev, firestoreUsers));
         }
       }, (err) => {
+        const msg = err?.message || String(err);
+        if (msg.includes('resource-exhausted') || msg.includes('Quota limit exceeded') || msg.includes('quota')) {
+          markFirestoreQuotaExceeded(msg);
+        }
         console.warn('Firestore users listener notice:', err);
       });
       return () => {
@@ -640,16 +660,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const syncAllUsersToCloud = async (usersToSync?: User[]): Promise<{ count: number; success: boolean }> => {
     const list = usersToSync || allUsers;
     if (!db || list.length === 0) return { count: 0, success: false };
+    if (isFirestoreQuotaExceeded()) {
+      console.warn('[Firestore] Quota exceeded. Skipping syncAllUsersToCloud.');
+      return { count: 0, success: false };
+    }
 
     try {
       const chunkSize = 100;
       for (let i = 0; i < list.length; i += chunkSize) {
         const chunk = list.slice(i, i + chunkSize);
-        const batch = writeBatch(db);
-        chunk.forEach(u => {
-          batch.set(doc(db, 'users', u.id), cleanForFirestore(u));
+        await safeFirestoreWrite(async () => {
+          const batch = writeBatch(db);
+          chunk.forEach(u => {
+            batch.set(doc(db, 'users', u.id), cleanForFirestore(u));
+          });
+          await batch.commit();
         });
-        await batch.commit();
       }
       console.log(`Successfully synced all ${list.length} users to Cloud Firestore`);
       return { count: list.length, success: true };
@@ -1114,11 +1140,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         await setDoc(doc(db, 'users', newId), cleanForFirestore(newUser));
-      } catch (e) {
-        console.warn('Firestore write user fallback:', e);
-      }
+      });
     }
 
     return newUser;
@@ -1136,11 +1160,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         await setDoc(doc(db, 'users', userId), cleanForFirestore(updates), { merge: true });
-      } catch (e) {
-        console.warn('Firestore user update fallback:', e);
-      }
+      });
     }
   };
 
@@ -1200,7 +1222,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         // 1. Permanently delete user document from Firestore
         await deleteDoc(doc(db, 'users', userId));
         
@@ -1245,9 +1267,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await Promise.all(batchList);
           }
         }
-      } catch (e) {
-        console.warn('Firestore delete user and cascade sync fallback:', e);
-      }
+      });
     }
   };
 
@@ -1313,7 +1333,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         const batchList: Promise<void>[] = [];
         let currentBatch = writeBatch(db);
         let opCount = 0;
@@ -1364,9 +1384,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await setDoc(doc(db, 'users', student.id), cleanForFirestore(student));
           }
         }
-      } catch (e) {
-        console.warn('Firestore bulk delete user and cascade fallback:', e);
-      }
+      });
     }
   };
 
@@ -1477,7 +1495,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         const batch = writeBatch(db);
         parentsToSyncToCloud.forEach(p => {
           batch.set(doc(db, 'users', p.id), cleanForFirestore(p), { merge: true });
@@ -1486,9 +1504,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           batch.set(doc(db, 'users', s.id), cleanForFirestore(s), { merge: true });
         });
         await batch.commit();
-      } catch (e) {
-        console.warn('Firestore sync parents warning:', e);
-      }
+      });
     }
 
     return { createdCount, updatedCount };
@@ -1500,7 +1516,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const deletedUserIds = getDeletedUserIds();
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         // 1. Scan and purge deleted users from Firestore
         const usersSnapshot = await getDocs(collection(db, 'users'));
         const userBatchList: Promise<void>[] = [];
@@ -1553,9 +1569,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (jBatchList.length > 0) {
           await Promise.all(jBatchList);
         }
-      } catch (e) {
-        console.warn('Error purging deleted users & journals from cloud:', e);
-      }
+      });
     }
 
     return { deletedUsersCount, deletedJournalsCount };
@@ -1714,7 +1728,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Realtime persistence to Firestore (chunked in safe batches with cleanForFirestore)
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         const allNew = [...newStudents, ...newParents];
         const chunkSize = 100;
         for (let i = 0; i < allNew.length; i += chunkSize) {
@@ -1726,9 +1740,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await batch.commit();
         }
         console.log(`Successfully synced ${allNew.length} imported user accounts to Cloud Firestore!`);
-      } catch (e) {
-        console.error('Firestore write batch error during import:', e);
-      }
+      });
     }
 
     return count;
@@ -1804,7 +1816,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (db) {
-      try {
+      await safeFirestoreWrite(async () => {
         const chunkSize = 100;
         for (let i = 0; i < newTeachers.length; i += chunkSize) {
           const chunk = newTeachers.slice(i, i + chunkSize);
@@ -1815,9 +1827,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await batch.commit();
         }
         console.log(`Successfully synced ${newTeachers.length} imported teachers to Cloud Firestore!`);
-      } catch (e) {
-        console.error('Firestore write batch error during teacher import:', e);
-      }
+      });
     }
 
     return count;
