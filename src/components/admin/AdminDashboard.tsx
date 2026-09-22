@@ -2585,16 +2585,29 @@ export const AdminDashboard: React.FC = () => {
                     </th>
                     <th className="p-3 text-center">L/P</th>
                     <th className="p-3">Kelas</th>
-                    <th className="p-3">Username (NIS)</th>
-                    <th className="p-3">Orang Tua Terhubung</th>
-                    <th className="p-3">Password Kredensial</th>
+                    <th className="p-3 min-w-[180px]">
+                      <div>
+                        <span className="font-extrabold text-slate-800 dark:text-slate-200">Kredensial Siswa</span>
+                        <span className="block text-[9px] font-mono text-blue-600 dark:text-blue-400 font-semibold lowercase">
+                          user: NIS | pass: siswaNIS
+                        </span>
+                      </div>
+                    </th>
+                    <th className="p-3 min-w-[195px]">
+                      <div>
+                        <span className="font-extrabold text-slate-800 dark:text-slate-200">Kredensial Orang Tua</span>
+                        <span className="block text-[9px] font-mono text-rose-600 dark:text-rose-400 font-semibold lowercase">
+                          user: ortu.NIS | pass: ortuNIS
+                        </span>
+                      </div>
+                    </th>
                     <th className="p-3 text-center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {paginatedStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="p-6 text-center text-slate-400 text-xs">
+                      <td colSpan={9} className="p-6 text-center text-slate-400 text-xs">
                         Tidak ada data siswa yang cocok dengan filter.
                       </td>
                     </tr>
@@ -2602,9 +2615,18 @@ export const AdminDashboard: React.FC = () => {
                     paginatedStudents.map((s) => {
                       const linkedParent = getLinkedParentForStudent(s, parents);
                       const isPwdVisible = showPasswordsMap[s.id];
+                      const parentToggleId = linkedParent ? linkedParent.id : `parent-${s.id}`;
+                      const isParentPwdVisible = showPasswordsMap[parentToggleId];
                       const isSelected = selectedStudentIds.includes(s.id);
                       const displayAbsen = s.attendanceNumber || s.noAbsen;
                       const studentNis = (s.nis || s.nisn || s.email || '-').trim();
+
+                      // Kredensial Siswa: user = NIS, password = siswaNIS
+                      const studentPassword = s.password || (studentNis !== '-' ? `siswa${studentNis}` : 'siswa123#Secure');
+
+                      // Kredensial Orang Tua: user = ortu.NIS, password = ortuNIS
+                      const parentUser = (studentNis !== '-' ? `ortu.${studentNis}` : (linkedParent?.email || 'ortu.123'));
+                      const parentPassword = linkedParent?.password || (studentNis !== '-' ? `ortu${studentNis}` : 'ortu123#Secure');
 
                       return (
                         <tr 
@@ -2667,40 +2689,115 @@ export const AdminDashboard: React.FC = () => {
                               {s.className || '7A'}
                             </span>
                           </td>
-                          <td className="p-3 font-mono">
-                            <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
-                              {studentNis}
-                            </span>
-                          </td>
+                          {/* Kredensial Siswa (User: NIS, Pass: siswaNIS) */}
                           <td className="p-3">
-                            {linkedParent ? (
-                              <div>
-                                <p className="font-semibold text-slate-800 dark:text-slate-200">{linkedParent.name}</p>
-                                <p className="text-[10px] text-slate-400">{linkedParent.phone || '-'}</p>
+                            <div className="p-2 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/60 space-y-1.5 min-w-[170px]">
+                              <div className="flex items-center justify-between text-[11px] font-mono">
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-sans font-bold">User:</span>
+                                <span className="inline-block px-1.5 py-0.5 rounded font-bold font-mono bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800">
+                                  {studentNis}
+                                </span>
                               </div>
-                            ) : (
-                              <span className="text-[10px] text-slate-400 italic">Belum terhubung</span>
-                            )}
+                              <div className="flex items-center justify-between text-[11px] font-mono">
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-sans font-bold">Pass:</span>
+                                <div className="flex items-center gap-1">
+                                  <span className="inline-block px-1.5 py-0.5 rounded font-bold font-mono bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800">
+                                    {isPwdVisible ? studentPassword : '••••••••'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePasswordVisibility(s.id)}
+                                    title={isPwdVisible ? "Sembunyikan Password" : "Lihat Password"}
+                                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                  >
+                                    {isPwdVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between pt-1 border-t border-blue-100 dark:border-blue-900/50">
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(`Username: ${studentNis} | Password: ${studentPassword}`)}
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 dark:text-blue-300 hover:underline cursor-pointer"
+                                  title="Salin Kredensial Siswa"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                  <span>Salin</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRegeneratePassword(s)}
+                                  title="Reset Password Siswa"
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                  <span>Reset</span>
+                                </button>
+                              </div>
+                            </div>
                           </td>
+
+                          {/* Kredensial Orang Tua (User: ortu.NIS, Pass: ortuNIS) */}
                           <td className="p-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-mono text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[11px]">
-                                {isPwdVisible ? (s.password || (studentNis !== '-' ? `siswa${studentNis}` : 'siswa123#Secure')) : '••••••••'}
-                              </span>
-                              <button
-                                onClick={() => togglePasswordVisibility(s.id)}
-                                title={isPwdVisible ? "Sembunyikan Password" : "Lihat Password"}
-                                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                              >
-                                {isPwdVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                              </button>
-                              <button
-                                onClick={() => handleRegeneratePassword(s)}
-                                title="Reset / Generate Password Baru"
-                                className="p-1 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950 rounded transition-colors"
-                              >
-                                <RefreshCw className="w-3.5 h-3.5" />
-                              </button>
+                            <div className="p-2 rounded-xl bg-rose-50/70 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/60 space-y-1.5 min-w-[185px]">
+                              {linkedParent ? (
+                                <div className="flex items-center justify-between text-[10px] font-sans border-b border-rose-200/60 dark:border-rose-900/50 pb-1">
+                                  <span className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[110px]" title={linkedParent.name}>
+                                    {linkedParent.name}
+                                  </span>
+                                  {linkedParent.phone && (
+                                    <span className="text-[9px] text-slate-500 font-mono">{linkedParent.phone}</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-[10px] font-sans border-b border-rose-200/60 dark:border-rose-900/50 pb-1 text-slate-400 italic">
+                                  Akun Ortu Otomatis
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between text-[11px] font-mono">
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-sans font-bold">User:</span>
+                                <span className="inline-block px-1.5 py-0.5 rounded font-bold font-mono bg-white dark:bg-slate-900 text-rose-700 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800">
+                                  {parentUser}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px] font-mono">
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-sans font-bold">Pass:</span>
+                                <div className="flex items-center gap-1">
+                                  <span className="inline-block px-1.5 py-0.5 rounded font-bold font-mono bg-white dark:bg-slate-900 text-rose-700 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800">
+                                    {isParentPwdVisible ? parentPassword : '••••••••'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePasswordVisibility(parentToggleId)}
+                                    title={isParentPwdVisible ? "Sembunyikan Password" : "Lihat Password"}
+                                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                  >
+                                    {isParentPwdVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between pt-1 border-t border-rose-100 dark:border-rose-900/50">
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(`Username: ${parentUser} | Password: ${parentPassword}`)}
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-300 hover:underline cursor-pointer"
+                                  title="Salin Kredensial Orang Tua"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                  <span>Salin</span>
+                                </button>
+                                {linkedParent && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRegeneratePassword(linkedParent)}
+                                    title="Reset Password Orang Tua"
+                                    className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
+                                  >
+                                    <RefreshCw className="w-3 h-3" />
+                                    <span>Reset</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="p-3 text-center">
