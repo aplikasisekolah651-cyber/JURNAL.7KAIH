@@ -1169,7 +1169,9 @@ export const AdminDashboard: React.FC = () => {
       const cleanNisn = formData.nisn ? formData.nisn.trim() : undefined;
       const updates: Partial<User> = {
         name: formData.name.trim(),
-        email: formData.email.trim(),
+        email: (editUser.role === 'siswa' && cleanNis && (!formData.email.trim() || formData.email.trim() === editUser.nis || formData.email.trim() === editUser.email))
+          ? cleanNis
+          : formData.email.trim(),
         phone: formData.phone.trim(),
         nip: formData.nip ? formData.nip.trim() : undefined,
         nis: cleanNis,
@@ -2525,10 +2527,33 @@ export const AdminDashboard: React.FC = () => {
                       title="Klik untuk mengurutkan berdasarkan Nama Siswa"
                     >
                       <div className="inline-flex items-center gap-1">
-                        <span className={studentSortField === 'name' ? 'text-indigo-600 dark:text-indigo-400 font-extrabold' : ''}>Siswa & NIS</span>
+                        <span className={studentSortField === 'name' ? 'text-indigo-600 dark:text-indigo-400 font-extrabold' : ''}>Nama Siswa</span>
                         {studentSortField === 'name' ? (
                           <span className="text-[10px] px-1 py-0.2 rounded font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
                             {studentSortOrder === 'asc' ? '▲ A-Z' : '▼ Z-A'}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-300 dark:text-slate-600">⇅</span>
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => {
+                        if (studentSortField === 'nis') {
+                          setStudentSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setStudentSortField('nis');
+                          setStudentSortOrder('asc');
+                        }
+                      }}
+                      className="p-3 cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Klik untuk mengurutkan berdasarkan NIS"
+                    >
+                      <div className="inline-flex items-center gap-1">
+                        <span className={studentSortField === 'nis' ? 'text-indigo-600 dark:text-indigo-400 font-extrabold' : ''}>NIS</span>
+                        {studentSortField === 'nis' ? (
+                          <span className="text-[10px] px-1 py-0.2 rounded font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                            {studentSortOrder === 'asc' ? '▲ Urut' : '▼ Terbalik'}
                           </span>
                         ) : (
                           <span className="text-[10px] text-slate-300 dark:text-slate-600">⇅</span>
@@ -2569,7 +2594,7 @@ export const AdminDashboard: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {paginatedStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-6 text-center text-slate-400 text-xs">
+                      <td colSpan={10} className="p-6 text-center text-slate-400 text-xs">
                         Tidak ada data siswa yang cocok dengan filter.
                       </td>
                     </tr>
@@ -2579,6 +2604,7 @@ export const AdminDashboard: React.FC = () => {
                       const isPwdVisible = showPasswordsMap[s.id];
                       const isSelected = selectedStudentIds.includes(s.id);
                       const displayAbsen = s.attendanceNumber || s.noAbsen;
+                      const studentNis = (s.nis || s.nisn || s.email || '-').trim();
 
                       return (
                         <tr 
@@ -2608,10 +2634,15 @@ export const AdminDashboard: React.FC = () => {
                                   )}
                                 </div>
                                 <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold font-mono">
-                                  NIS: {s.nis || s.nisn || '-'}
+                                  NIS: {studentNis}
                                 </p>
                               </div>
                             </div>
+                          </td>
+                          <td className="p-3 font-mono">
+                            <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                              {studentNis}
+                            </span>
                           </td>
                           <td className="p-3 text-center">
                             {displayAbsen ? (
@@ -2636,8 +2667,10 @@ export const AdminDashboard: React.FC = () => {
                               {s.className || '7A'}
                             </span>
                           </td>
-                          <td className="p-3 font-mono text-slate-700 dark:text-slate-300 text-[11px]">
-                            {s.email}
+                          <td className="p-3 font-mono">
+                            <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                              {studentNis}
+                            </span>
                           </td>
                           <td className="p-3">
                             {linkedParent ? (
@@ -2652,7 +2685,7 @@ export const AdminDashboard: React.FC = () => {
                           <td className="p-3">
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[11px]">
-                                {isPwdVisible ? (s.password || 'siswa123#Secure') : '••••••••'}
+                                {isPwdVisible ? (s.password || (studentNis !== '-' ? `siswa${studentNis}` : 'siswa123#Secure')) : '••••••••'}
                               </span>
                               <button
                                 onClick={() => togglePasswordVisibility(s.id)}
@@ -4198,7 +4231,7 @@ export const AdminDashboard: React.FC = () => {
                                 {s.name}
                               </h4>
                               <p className="text-[10px] text-purple-600 dark:text-purple-400 font-mono font-bold">
-                                NISN: {s.nisn || '-'}
+                                NIS: {sNis || '-'}
                               </p>
                             </div>
                           </div>
@@ -4566,8 +4599,16 @@ export const AdminDashboard: React.FC = () => {
                       <input
                         type="text"
                         placeholder="23451"
-                        value={formData.nisn}
-                        onChange={(e) => setFormData({ ...formData, nisn: e.target.value })}
+                        value={formData.nis || formData.nisn || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData({ 
+                            ...formData, 
+                            nis: val, 
+                            nisn: formData.nisn || val,
+                            email: (!editUser && (!formData.email || formData.email === formData.nis)) ? val : formData.email
+                          });
+                        }}
                         className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-purple-500 font-mono"
                       />
                     </div>
