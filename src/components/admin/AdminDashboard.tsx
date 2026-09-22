@@ -529,18 +529,33 @@ export const AdminDashboard: React.FC = () => {
 
     // 1. Strict Positional Check for Standard Database Formats:
     // Format 10 Kolom Database Lengkap: [0: NIS, 1: NISN, 2: No Absen, 3: Nama Siswa, 4: Jenis Kelamin, 5: Agama, 6: Kelas, 7: No HP Siswa, 8: Nama Orang Tua, 9: No HP Ortu]
+    // Format 10 Kolom No Urut: [0: No Urut, 1: NIS, 2: NISN, 3: Nama Siswa, 4: Jenis Kelamin, 5: Agama, 6: Kelas, 7: No HP Siswa, 8: Nama Orang Tua, 9: No HP Ortu]
     // Format 9 Kolom: [0: NIS, 1: NISN, 2: No Absen, 3: Nama Siswa, 4: Jenis Kelamin, 5: Agama, 6: Kelas, 7: Nama Orang Tua, 8: No HP Ortu]
     // Format 8 Kolom: [0: NIS, 1: No Absen, 2: Nama Siswa, 3: Jenis Kelamin, 4: Agama, 5: Kelas, 6: Nama Orang Tua, 7: No HP Ortu]
     // Format 7 Kolom: [0: NIS, 1: Nama Siswa, 2: Jenis Kelamin, 3: Agama, 4: Kelas, 5: Nama Orang Tua, 6: No HP Ortu]
     let isPositionalMatch = false;
 
     if (rawParts.length >= 10 && isGenderToken(rawParts[4]) && (isReligionToken(rawParts[5]) || isClassToken(rawParts[6]))) {
-      // Format 10 Kolom Lengkap Sesuai Database
+      // Format 10 Kolom
       isPositionalMatch = true;
-      detectedNis = rawParts[0].trim();
-      detectedNisn = rawParts[1].trim();
-      detectedAbsen = rawParts[2].trim();
-      detectedStudentName = rawParts[3].trim();
+      const isCol0Seq = /^\d{1,2}$/.test(rawParts[0]) && parseInt(rawParts[0], 10) >= 1 && parseInt(rawParts[0], 10) <= 60;
+      const isCol1Nis = /^[a-zA-Z0-9.-]{3,16}$/.test(rawParts[1]) && !isGenderToken(rawParts[1]);
+
+      if (isCol0Seq && isCol1Nis) {
+        // [0: No Urut, 1: NIS, 2: NISN/Absen, 3: Nama Siswa, 4: Gender, 5: Agama, 6: Kelas...]
+        detectedAbsen = rawParts[0].padStart(2, '0');
+        detectedNis = rawParts[1].trim();
+        if (/^\d{10}$/.test(rawParts[2])) {
+          detectedNisn = rawParts[2].trim();
+        }
+        detectedStudentName = rawParts[3].trim();
+      } else {
+        // Standard Database Template: [0: NIS, 1: NISN, 2: No Absen, 3: Nama Siswa, 4: Gender...]
+        detectedNis = rawParts[0].trim();
+        detectedNisn = rawParts[1].trim();
+        detectedAbsen = rawParts[2].trim();
+        detectedStudentName = rawParts[3].trim();
+      }
       detectedGender = normalizeGenderVal(rawParts[4]);
       detectedReligion = normalizeReligionVal(rawParts[5]);
       detectedClass = cleanAndFormatClassToken(rawParts[6]) || normalizeClassName(rawParts[6]);
@@ -550,10 +565,20 @@ export const AdminDashboard: React.FC = () => {
     } else if (rawParts.length === 9 && isGenderToken(rawParts[4]) && (isReligionToken(rawParts[5]) || isClassToken(rawParts[6]))) {
       // Format 9 Kolom (dengan NISN tanpa HP Siswa)
       isPositionalMatch = true;
-      detectedNis = rawParts[0].trim();
-      detectedNisn = rawParts[1].trim();
-      detectedAbsen = rawParts[2].trim();
-      detectedStudentName = rawParts[3].trim();
+      const isCol0Seq = /^\d{1,2}$/.test(rawParts[0]) && parseInt(rawParts[0], 10) >= 1 && parseInt(rawParts[0], 10) <= 60;
+      const isCol1Nis = /^[a-zA-Z0-9.-]{3,16}$/.test(rawParts[1]) && !isGenderToken(rawParts[1]);
+
+      if (isCol0Seq && isCol1Nis) {
+        detectedAbsen = rawParts[0].padStart(2, '0');
+        detectedNis = rawParts[1].trim();
+        if (/^\d{10}$/.test(rawParts[2])) detectedNisn = rawParts[2].trim();
+        detectedStudentName = rawParts[3].trim();
+      } else {
+        detectedNis = rawParts[0].trim();
+        detectedNisn = rawParts[1].trim();
+        detectedAbsen = rawParts[2].trim();
+        detectedStudentName = rawParts[3].trim();
+      }
       detectedGender = normalizeGenderVal(rawParts[4]);
       detectedReligion = normalizeReligionVal(rawParts[5]);
       detectedClass = cleanAndFormatClassToken(rawParts[6]) || normalizeClassName(rawParts[6]);
@@ -562,9 +587,20 @@ export const AdminDashboard: React.FC = () => {
     } else if (rawParts.length >= 8 && isGenderToken(rawParts[3]) && (isReligionToken(rawParts[4]) || isClassToken(rawParts[5]))) {
       // Format 8 Kolom Standar
       isPositionalMatch = true;
-      detectedNis = rawParts[0].trim();
-      detectedAbsen = rawParts[1].trim();
-      detectedStudentName = rawParts[2].trim();
+      const isCol0Seq = /^\d{1,2}$/.test(rawParts[0]) && parseInt(rawParts[0], 10) >= 1 && parseInt(rawParts[0], 10) <= 60;
+      const isCol1Nis = /^[a-zA-Z0-9.-]{3,16}$/.test(rawParts[1]) && !isGenderToken(rawParts[1]);
+
+      if (isCol0Seq && isCol1Nis) {
+        // [0: No Urut, 1: NIS, 2: Nama Siswa, 3: Gender, 4: Agama, 5: Kelas, 6: Nama Ortu, 7: HP Ortu]
+        detectedAbsen = rawParts[0].padStart(2, '0');
+        detectedNis = rawParts[1].trim();
+        detectedStudentName = rawParts[2].trim();
+      } else {
+        // [0: NIS, 1: No Absen, 2: Nama Siswa, 3: Gender, 4: Agama, 5: Kelas, 6: Nama Ortu, 7: HP Ortu]
+        detectedNis = rawParts[0].trim();
+        detectedAbsen = rawParts[1].trim();
+        detectedStudentName = rawParts[2].trim();
+      }
       detectedGender = normalizeGenderVal(rawParts[3]);
       detectedReligion = normalizeReligionVal(rawParts[4]);
       detectedClass = cleanAndFormatClassToken(rawParts[5]) || normalizeClassName(rawParts[5]);
@@ -573,8 +609,15 @@ export const AdminDashboard: React.FC = () => {
     } else if (rawParts.length === 7 && isGenderToken(rawParts[2]) && (isReligionToken(rawParts[3]) || isClassToken(rawParts[4]))) {
       // Format 7 Kolom
       isPositionalMatch = true;
-      detectedNis = rawParts[0].trim();
-      detectedStudentName = rawParts[1].trim();
+      const isCol0Seq = /^\d{1,2}$/.test(rawParts[0]) && parseInt(rawParts[0], 10) >= 1 && parseInt(rawParts[0], 10) <= 60;
+      if (isCol0Seq) {
+        detectedAbsen = rawParts[0].padStart(2, '0');
+        detectedNis = '';
+        detectedStudentName = rawParts[1].trim();
+      } else {
+        detectedNis = rawParts[0].trim();
+        detectedStudentName = rawParts[1].trim();
+      }
       detectedGender = normalizeGenderVal(rawParts[2]);
       detectedReligion = normalizeReligionVal(rawParts[3]);
       detectedClass = cleanAndFormatClassToken(rawParts[4]) || normalizeClassName(rawParts[4]);
@@ -614,7 +657,7 @@ export const AdminDashboard: React.FC = () => {
           return;
         }
 
-        // 5. Absen number (1-2 digits, 1 to 50)
+        // 5. Absen number (1-2 digits, 1 to 60)
         if (!detectedAbsen && /^\d{1,2}$/.test(token) && parseInt(token, 10) >= 1 && parseInt(token, 10) <= 60) {
           detectedAbsen = token.padStart(2, '0');
           return;
@@ -626,9 +669,9 @@ export const AdminDashboard: React.FC = () => {
           return;
         }
 
-        // 7. NIS (Numeric string 3-12 digits)
-        if (!detectedNis && /^\d{3,12}$/.test(token)) {
-          detectedNis = token;
+        // 7. NIS (Numeric or alphanumeric code e.g. 23451, 8942)
+        if (!detectedNis && /^[0-9.-]{3,14}$/.test(token) && token.replace(/[^0-9]/g, '').length >= 3) {
+          detectedNis = token.replace(/[^a-zA-Z0-9._-]/g, '');
           return;
         }
 
@@ -659,14 +702,16 @@ export const AdminDashboard: React.FC = () => {
     const finalReligion = detectedReligion || 'Islam';
     const finalNoAbsen = detectedAbsen || (rowIdx > 0 ? String(rowIdx).padStart(2, '0') : '01');
 
-    // Auto-Heal NIS if missing: construct from Class + Absen (e.g., 7A01, 7A02) or generated unique ID
-    let finalNis = detectedNis;
-    if (!finalNis || finalNis === 'L' || finalNis === 'P' || finalNis.length < 2) {
-      if (finalClassName && finalNoAbsen) {
-        finalNis = `${finalClassName.replace(/[^a-zA-Z0-9]/g, '')}${finalNoAbsen.padStart(2, '0')}`;
-      } else {
-        finalNis = `24${String(rowIdx).padStart(3, '0')}`;
-      }
+    // NIS Resolution: MUST ALWAYS BE THE ACTUAL STUDENT NIS!
+    // NEVER generate NIS from class name and attendance number (e.g. 7A01).
+    let finalNis = (detectedNis || '').trim();
+    if (finalNis === 'L' || finalNis === 'P' || finalNis === '-') {
+      finalNis = '';
+    }
+
+    // Fallback: If NIS is empty but NISN exists, use NISN as NIS
+    if (!finalNis && detectedNisn && /^\d{3,12}$/.test(detectedNisn)) {
+      finalNis = detectedNisn;
     }
 
     // Clean strings and sanitize tokens
@@ -680,7 +725,7 @@ export const AdminDashboard: React.FC = () => {
     if (!cleanName || cleanName.length < 2) {
       errorReason = 'Nama siswa belum lengkap';
     } else if (!cleanNis) {
-      errorReason = 'NIS tidak boleh kosong';
+      errorReason = 'Kolom NIS belum terisi (NIS wajib diisi)';
     }
 
     const isValid = Boolean(cleanNis && cleanName && cleanName.length >= 2 && !isHeader);
@@ -696,11 +741,11 @@ export const AdminDashboard: React.FC = () => {
       className: finalClassName,
       studentPhone: detectedStudentPhone.trim(),
       studentUsername: cleanNis,
-      studentPassword: `siswa${cleanNis}`,
+      studentPassword: cleanNis ? `siswa${cleanNis}` : '',
       parentName: pAutoName,
       parentPhone: detectedParentPhone.trim(),
-      parentUsername: `ortu.${cleanNis}`,
-      parentPassword: `ortu${cleanNis}`,
+      parentUsername: cleanNis ? `ortu.${cleanNis}` : '',
+      parentPassword: cleanNis ? `ortu${cleanNis}` : '',
       isValid,
       isHeader: false,
       errorReason
@@ -1520,30 +1565,58 @@ export const AdminDashboard: React.FC = () => {
         for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
           const row = rawRows[r];
           if (!row || !Array.isArray(row) || row.length === 0) continue;
-          const strCells = row.map(c => cleanExcelCellValue(c).toLowerCase());
-          const hasNama = strCells.some(c => c.includes('nama') && !c.includes('ortu') && !c.includes('wali'));
-          const hasNis = strCells.some(c => c.includes('nis'));
+          const strCells = row.map(c => cleanExcelCellValue(c).toLowerCase().trim());
+          const hasNama = strCells.some(c => (c.includes('nama') || c.includes('siswa')) && !c.includes('ortu') && !c.includes('wali'));
+          const hasNis = strCells.some(c => (c === 'nis' || c.includes('induk') || c === 'nipd' || /\bnis\b/.test(c)) && !c.includes('jenis'));
           const hasKelas = strCells.some(c => c.includes('kelas') || c.includes('rombel') || c.includes('rombongan'));
 
-          if ((hasNama && (hasNis || hasKelas)) || (hasNis && hasKelas)) {
+          if ((hasNama && (hasNis || hasKelas)) || (hasNis && hasKelas) || (hasNama && strCells.length >= 3)) {
             headerRowIdx = r;
             strCells.forEach((c, idx) => {
-              if (c.includes('nisn')) colMap['nisn'] = idx;
-              else if (c.includes('nis')) colMap['nis'] = idx;
-              else if (c.includes('absen') || c.includes('presensi') || c.includes('urut')) colMap['absen'] = idx;
-              else if (c.includes('nama') && (c.includes('siswa') || c.includes('lengkap') || (!c.includes('ortu') && !c.includes('wali') && !c.includes('ayah') && !c.includes('ibu')))) {
+              // 1. NISN (must be checked before NIS)
+              if (c === 'nisn' || c === 'n.i.s.n' || /\bnisn\b/.test(c) || c.includes('siswa nasional')) {
+                colMap['nisn'] = idx;
+              }
+              // 2. Gender / Jenis Kelamin (CRITICAL: must be checked before NIS because 'jenis kelamin' contains 'nis')
+              else if (c.includes('kelamin') || c.includes('gender') || c.includes('jenis') || c === 'l/p' || c === 'jk' || c === 'l / p' || c === 'j/k' || c === 'sex') {
+                colMap['gender'] = idx;
+              }
+              // 3. NIS / No Induk / NIPD
+              else if (
+                (c === 'nis' || c === 'n.i.s' || c === 'nipd' || /\b(nis|nipd)\b/.test(c) || c.includes('no. induk') || c.includes('no induk') || c.includes('nomor induk') || c.includes('no.induk') || (c.startsWith('nis') && !c.includes('teknis'))) &&
+                !c.includes('jenis') && !c.includes('nisn')
+              ) {
+                colMap['nis'] = idx;
+              }
+              // 4. No Absen / Presensi
+              else if (c.includes('absen') || c.includes('presensi') || c.includes('absensi') || c.includes('kehadiran')) {
+                colMap['absen'] = idx;
+              }
+              // 5. No Urut
+              else if (c.includes('urut') || c === 'no' || c === 'no.' || c === 'nomor') {
+                if (colMap['rowNum'] === undefined) colMap['rowNum'] = idx;
+              }
+              // 6. Nama Siswa
+              else if ((c.includes('nama') || c.includes('peserta didik')) && (c.includes('siswa') || c.includes('lengkap') || (!c.includes('ortu') && !c.includes('wali') && !c.includes('ayah') && !c.includes('ibu')))) {
                 if (colMap['name'] === undefined) colMap['name'] = idx;
               }
-              else if (c.includes('kelamin') || c.includes('gender') || c === 'l/p' || c === 'jk') colMap['gender'] = idx;
-              else if (c.includes('agama') || c.includes('religion')) colMap['religion'] = idx;
-              else if (c.includes('kelas') || c.includes('rombel') || c.includes('rombongan')) colMap['class'] = idx;
-              else if (c.includes('ortu') || c.includes('wali') || c.includes('ayah') || c.includes('ibu')) {
+              // 7. Agama
+              else if (c.includes('agama') || c.includes('religion')) {
+                colMap['religion'] = idx;
+              }
+              // 8. Kelas / Rombel
+              else if (c.includes('kelas') || c.includes('rombel') || c.includes('rombongan') || c.includes('tingkat')) {
+                colMap['class'] = idx;
+              }
+              // 9. Orang Tua (Nama / No HP)
+              else if (c.includes('ortu') || c.includes('wali') || c.includes('ayah') || c.includes('ibu') || c.includes('orang tua') || c.includes('orangtua')) {
                 if (c.includes('hp') || c.includes('wa') || c.includes('telp') || c.includes('ponsel') || c.includes('kontak')) {
                   colMap['parentPhone'] = idx;
                 } else {
                   colMap['parentName'] = idx;
                 }
               }
+              // 10. No HP Siswa
               else if (c.includes('hp') || c.includes('wa') || c.includes('telp') || c.includes('ponsel') || c.includes('kontak')) {
                 if (colMap['studentPhone'] === undefined) {
                   colMap['studentPhone'] = idx;
@@ -1552,6 +1625,11 @@ export const AdminDashboard: React.FC = () => {
                 }
               }
             });
+
+            // If no specific absen column was detected, fallback to row number
+            if (colMap['absen'] === undefined && colMap['rowNum'] !== undefined) {
+              colMap['absen'] = colMap['rowNum'];
+            }
             break;
           }
         }
@@ -1572,7 +1650,13 @@ export const AdminDashboard: React.FC = () => {
           if (headerRowIdx >= 0) {
             if (colMap['nis'] !== undefined) {
               const explicitNis = cleanExcelCellValue(row[colMap['nis']]);
-              if (explicitNis) parsed.nis = explicitNis;
+              if (explicitNis && explicitNis !== 'L' && explicitNis !== 'P' && explicitNis !== '-') {
+                parsed.nis = explicitNis.replace(/[^a-zA-Z0-9._-]/g, '');
+                parsed.studentUsername = parsed.nis;
+                parsed.studentPassword = `siswa${parsed.nis}`;
+                parsed.parentUsername = `ortu.${parsed.nis}`;
+                parsed.parentPassword = `ortu${parsed.nis}`;
+              }
             }
             if (colMap['nisn'] !== undefined) {
               const explicitNisn = cleanExcelCellValue(row[colMap['nisn']]);
