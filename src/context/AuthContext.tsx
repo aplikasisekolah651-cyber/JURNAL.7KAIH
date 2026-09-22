@@ -38,6 +38,7 @@ interface AuthContextType {
     className: string; 
     gender?: 'L' | 'P'; 
     religion?: string;
+    phone?: string;
     parentName?: string; 
     parentPhone?: string 
   }[]) => Promise<number>;
@@ -1673,6 +1674,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       className: string; 
       gender?: 'L' | 'P'; 
       religion?: string;
+      phone?: string;
       parentName?: string; 
       parentPhone?: string 
     }[]
@@ -1683,7 +1685,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     for (const item of importedList) {
       const cleanNis = (item.nis || item.nisn || '').trim();
+      const cleanNisn = (item.nisn || '').trim();
       const cleanAbsen = (item.attendanceNumber || item.noAbsen || '').trim();
+      const cleanPhone = (item.phone || '').trim();
       const cleanName = item.name.trim();
       if (!cleanName || !cleanNis) continue;
       
@@ -1731,13 +1735,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         gender: cleanGender,
         religion: cleanReligion,
         nis: cleanNis,
-        nisn: cleanNis,
+        nisn: cleanNisn || cleanNis,
         attendanceNumber: cleanAbsen,
         noAbsen: cleanAbsen,
         classId: cleanClassId,
         className: normalizedClass,
         parentId: parentId,
-        phone: '08123456789',
+        parentName: pName,
+        parentPhone: item.parentPhone?.trim() || '',
+        phone: cleanPhone || '08123456789',
         avatar: cleanGender === 'P' ? DATA_URI_SISWA_PUTRI : DATA_URI_SISWA_PUTRA,
         password: `siswa${cleanNis}`, // Digenerate otomatis dari NIS
         schoolName: 'SMP Negeri 2 Kasihan',
