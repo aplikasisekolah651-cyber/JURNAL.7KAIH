@@ -525,9 +525,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const deletedIds = getDeletedUserIds();
     const map = new Map<string, User>();
     
-    // 1. Put demo admin and teachers as safety fallbacks only if not deleted
+    // 1. Put demo admin, teachers, and standard demo student as safety fallbacks only if not deleted
     DEMO_USERS
-      .filter(u => (u.role === 'admin' || u.role === 'walikelas') && !deletedIds.has(u.id) && !isTargetPurgedUser(u))
+      .filter(u => !deletedIds.has(u.id) && !isTargetPurgedUser(u))
       .forEach(u => {
         map.set(u.id, {
           ...u,
@@ -779,6 +779,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false;
       });
       if (foundAdmin) return foundAdmin;
+    }
+
+    // Priority: Student Login by NIS (Nomor Induk Siswa)
+    if (!isParentIntent && !isTeacherIntent && !isAdminIntent) {
+      const cleanDigits = unbracketed.replace(/[^0-9]/g, '');
+      const isSiswaPrefix = unbracketed.startsWith('siswa');
+      const studentCandidateNis = isSiswaPrefix ? unbracketed.replace(/^siswa[._-]*/, '') : unbracketed;
+
+      const foundStudent = userList.find(u => {
+        if (u.role !== 'siswa') return false;
+        const uNis = (u.nis || '').toLowerCase().trim();
+        const uNisn = (u.nisn || '').toLowerCase().trim();
+        const uEmail = (u.email || '').toLowerCase().trim();
+        const uName = (u.name || '').toLowerCase().trim();
+
+        // 1. Direct NIS match
+        if (uNis && (uNis === unbracketed || uNis === rawClean || uNis === studentCandidateNis)) return true;
+        // 2. Direct NISN match
+        if (uNisn && (uNisn === unbracketed || uNisn === rawClean || uNisn === studentCandidateNis)) return true;
+        // 3. Username / Email match (e.g. student email set to NIS)
+        if (uEmail && (uEmail === unbracketed || uEmail === rawClean || uEmail === studentCandidateNis)) return true;
+        // 4. Digits-only match (e.g. if NIS has formatting or leading zeroes)
+        if (cleanDigits && cleanDigits.length >= 3) {
+          if (uNis && uNis.replace(/[^0-9]/g, '') === cleanDigits) return true;
+          if (uNisn && uNisn.replace(/[^0-9]/g, '') === cleanDigits) return true;
+          if (uEmail && uEmail.replace(/[^0-9]/g, '') === cleanDigits) return true;
+        }
+        // 5. Full Name match
+        if (uName && (uName === unbracketed || uName.replace(/\s+/g, '') === rawClean)) return true;
+        return false;
+      });
+
+      if (foundStudent) return foundStudent;
     }
 
     // Priority 2: General scan across all users with exhaustive matching

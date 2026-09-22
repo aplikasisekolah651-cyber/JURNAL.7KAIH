@@ -128,12 +128,12 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // 2. Persist to Firestore Cloud Database
     if (db) {
-      const success = await safeFirestoreWrite(async () => {
+      await safeFirestoreWrite(async () => {
         const settingsDocRef = doc(db, 'settings', 'school');
         await setDoc(settingsDocRef, updates, { merge: true });
         setIsSyncedWithDb(true);
       });
-      return success;
+      return true;
     }
     return true;
   };

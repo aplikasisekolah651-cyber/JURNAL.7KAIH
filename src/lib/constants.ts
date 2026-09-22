@@ -444,6 +444,38 @@ export const DEMO_USERS: User[] = [
     password: 'wali123#Secure',
     schoolName: 'SMP Negeri 2 Kasihan',
     createdAt: '2025-07-15T08:00:00.000Z'
+  },
+  {
+    id: 'usr-siswa-23451',
+    name: 'Ahmad Fauzan',
+    email: '23451',
+    role: 'siswa',
+    gender: 'L',
+    religion: 'Islam',
+    nis: '23451',
+    nisn: '23451',
+    attendanceNumber: '01',
+    noAbsen: '01',
+    classId: 'class-7a',
+    className: '7A',
+    parentId: 'usr-ortu-23451',
+    phone: '081234567801',
+    avatar: DATA_URI_SISWA_PUTRA,
+    password: 'siswa23451',
+    schoolName: 'SMP Negeri 2 Kasihan',
+    createdAt: '2025-07-15T08:00:00.000Z'
+  },
+  {
+    id: 'usr-ortu-23451',
+    name: 'Bpk. Fauzan (Ortu Ahmad Fauzan)',
+    email: 'ortu.23451',
+    role: 'orangtua',
+    studentIds: ['usr-siswa-23451'],
+    phone: '081234567801',
+    avatar: DATA_URI_ORANG_TUA,
+    password: 'ortu23451',
+    schoolName: 'SMP Negeri 2 Kasihan',
+    createdAt: '2025-07-15T08:00:00.000Z'
   }
 ];
 
